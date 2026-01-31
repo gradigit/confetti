@@ -1,253 +1,603 @@
 import AppKit
 import ConfettiKit
 
-// MARK: - Benchmark Utilities
+// MARK: - Benchmark Infrastructure
 
-struct BenchmarkResult {
-    let name: String
-    let iterations: Int
-    let totalTime: TimeInterval
-    let averageTime: TimeInterval
-    let minTime: TimeInterval
-    let maxTime: TimeInterval
+/// Prevents the compiler from optimising away unused results.
+/// The global var ensures the compiler can't prove the store is dead.
+private var _sink: Any = 0
 
-    var description: String {
-        let avgUs = averageTime * 1_000_000
-        let minUs = minTime * 1_000_000
-        let maxUs = maxTime * 1_000_000
-        let totalMs = totalTime * 1000
-        return String(format: "%-40s │ %7d │ %8.2f ms │ %8.2f μs │ %8.2f μs │ %8.2f μs",
-                      name, iterations, totalMs, avgUs, minUs, maxUs)
-    }
+@inline(never)
+func blackHole<T>(_ value: T) {
+    _sink = value
 }
 
-func benchmark(_ name: String, iterations: Int = 1000, warmup: Int = 100, _ block: () -> Void) -> BenchmarkResult {
+/// Monotonic nanosecond timestamp (not affected by NTP / clock drift)
+@inline(__always)
+func now() -> UInt64 {
+    clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)
+}
+
+struct Stats {
+    let name: String
+    let totalIterations: Int
+    let medianNs: Double
+    let meanNs: Double
+    let minNs: Double
+    let maxNs: Double
+    let stddevNs: Double
+    let p95Ns: Double
+}
+
+/// Measures per-call time by timing `batchSize` calls together (to exceed
+/// clock resolution), repeated `runs` times for statistics.
+func benchmark(
+    _ name: String,
+    batchSize: Int = 10000,
+    runs: Int = 20,
+    warmup: Int = 3,
+    _ block: () -> Void
+) -> Stats {
     // Warmup
     for _ in 0..<warmup {
-        block()
+        for _ in 0..<batchSize { block() }
     }
 
-    var times: [TimeInterval] = []
-    times.reserveCapacity(iterations)
+    // Measured runs — each run times batchSize calls, then divides
+    var samples = [Double]()
+    samples.reserveCapacity(runs)
 
-    for _ in 0..<iterations {
-        let start = CFAbsoluteTimeGetCurrent()
-        block()
-        let end = CFAbsoluteTimeGetCurrent()
-        times.append(end - start)
+    for _ in 0..<runs {
+        let t0 = now()
+        for _ in 0..<batchSize { block() }
+        let t1 = now()
+        samples.append(Double(t1 &- t0) / Double(batchSize))
     }
 
-    let totalTime = times.reduce(0, +)
-    let averageTime = totalTime / Double(iterations)
-    let minTime = times.min() ?? 0
-    let maxTime = times.max() ?? 0
+    samples.sort()
+    let n = Double(runs)
+    let mean = samples.reduce(0, +) / n
+    let variance = samples.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / n
+    let mid = runs / 2
+    let median = runs % 2 == 0 ? (samples[mid - 1] + samples[mid]) / 2 : samples[mid]
+    let p95 = samples[min(Int(n * 0.95), runs - 1)]
 
-    return BenchmarkResult(
-        name: name,
-        iterations: iterations,
-        totalTime: totalTime,
-        averageTime: averageTime,
-        minTime: minTime,
-        maxTime: maxTime
+    return Stats(
+        name: name, totalIterations: batchSize * runs,
+        medianNs: median, meanNs: mean,
+        minNs: samples.first ?? 0, maxNs: samples.last ?? 0,
+        stddevNs: variance.squareRoot(), p95Ns: p95
     )
 }
 
-// MARK: - Table Drawing
+// MARK: - Formatting Helpers
 
-private let colWidths = [42, 9, 13, 13, 13, 13]
-
-private func tableBorder(left: String, fill: String, sep: String, right: String) -> String {
-    left + colWidths.map { String(repeating: fill, count: $0) }.joined(separator: sep) + right
-}
-
-private func fullBorder(left: String, fill: String, right: String) -> String {
-    let innerWidth = colWidths.reduce(0, +) + colWidths.count - 1
-    return left + String(repeating: fill, count: innerWidth) + right
-}
-
-private func centered(_ text: String) -> String {
-    let innerWidth = colWidths.reduce(0, +) + colWidths.count - 1
-    let pad = innerWidth - text.count
-    let leftPad = pad / 2
-    let rightPad = pad - leftPad
-    return String(repeating: " ", count: leftPad) + text + String(repeating: " ", count: rightPad)
-}
-
-// MARK: - Benchmarks
-
-func runBenchmarks() {
-    print("")
-    print(fullBorder(left: "╔", fill: "═", right: "╗"))
-    print("║" + centered("CONFETTI PERFORMANCE BENCHMARKS") + "║")
-    print(tableBorder(left: "╠", fill: "═", sep: "╤", right: "╣"))
-    print("║ Benchmark                                │  Iters  │    Total    │     Avg     │     Min     │     Max     ║")
-    print(tableBorder(left: "╠", fill: "═", sep: "╪", right: "╣"))
-
-    var results: [BenchmarkResult] = []
-
-    // Benchmark 1: Config default access
-    let configResult = benchmark("ConfettiConfig.default", iterations: 100000) {
-        _ = ConfettiConfig.default
+/// Formats nanoseconds into the most readable unit (fixed 11-char width)
+func fmt(_ ns: Double) -> String {
+    if ns >= 1_000_000 {
+        return String(format: "%8.2f ms", ns / 1_000_000)
+    } else if ns >= 1000 {
+        return String(format: "%8.2f \u{00B5}s", ns / 1000)
+    } else {
+        return String(format: "%8.1f ns", ns)
     }
-    results.append(configResult)
-    print("║ \(configResult.description) ║")
+}
 
-    // Benchmark 2: Custom config creation
-    let customConfigResult = benchmark("ConfettiConfig custom init", iterations: 50000) {
-        _ = ConfettiConfig(
-            birthRate: 30,
-            lifetime: 4.5,
-            velocity: 1250,
-            velocityRange: 400,
-            emissionRange: .pi * 0.4,
-            gravity: -750,
-            spin: 8.0,
-            spinRange: 16.0,
-            scale: 0.8,
-            scaleRange: 0.05,
-            scaleSpeed: -0.1,
+/// Left-align text in a field of `width` characters
+func lpad(_ text: String, _ width: Int) -> String {
+    if text.count >= width { return String(text.prefix(width)) }
+    return text + String(repeating: " ", count: width - text.count)
+}
+
+/// Right-align text in a field of `width` characters
+func rpad(_ text: String, _ width: Int) -> String {
+    if text.count >= width { return String(text.prefix(width)) }
+    return String(repeating: " ", count: width - text.count) + text
+}
+
+let innerWidth = 96
+
+func fullBorder(_ left: String, _ fill: String, _ right: String) -> String {
+    left + String(repeating: fill, count: innerWidth) + right
+}
+
+func tableBorder(_ left: String, _ fill: String, _ sep: String, _ right: String) -> String {
+    let cols = [36, 7, 12, 12, 12, 12]
+    return left + cols.map { String(repeating: fill, count: $0) }.joined(separator: sep) + right
+}
+
+func centered(_ text: String) -> String {
+    let p = max(0, innerWidth - text.count)
+    return String(repeating: " ", count: p / 2) + text + String(repeating: " ", count: p - p / 2)
+}
+
+func printRow(_ s: Stats) {
+    print("║ \(lpad(s.name, 35))│\(rpad(String(s.totalIterations), 7))│\(fmt(s.medianNs))│\(fmt(s.p95Ns))│\(fmt(s.minNs))│\(fmt(s.stddevNs))║")
+}
+
+// MARK: - Run Benchmarks
+
+@discardableResult
+func runBenchmarks() -> [Stats] {
+    // ── System Info ──────────────────────────────────────────────────────────
+    print(fullBorder("╔", "═", "╗"))
+    print("║\(centered("CONFETTI BENCHMARK SUITE v2.0"))║")
+    print(fullBorder("╚", "═", "╝"))
+    print("")
+    print("System: macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
+    print("Date:   \(ISO8601DateFormatter().string(from: Date()))")
+    print("CPU:    \(ProcessInfo.processInfo.processorCount) cores")
+    print("Memory: \(ProcessInfo.processInfo.physicalMemory / 1_073_741_824) GB")
+    print("Timer:  CLOCK_MONOTONIC_RAW")
+    print("")
+
+    // ── Timing Benchmarks ───────────────────────────────────────────────────
+    print(fullBorder("╔", "═", "╗"))
+    print("║\(centered("TIMING BENCHMARKS"))║")
+    print(tableBorder("╠", "═", "╤", "╣"))
+    print("║ \(lpad("Benchmark", 35))│\(rpad("Iters", 7))│\(rpad("Median", 12))│\(rpad("p95", 12))│\(rpad("Min", 12))│\(rpad("Stddev", 12))║")
+    print(tableBorder("╠", "═", "╪", "╣"))
+
+    var results: [Stats] = []
+
+    // Pre-create colors (avoids NSColor.system* which needs appearance system)
+    let colors = [
+        NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1),
+        NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1),
+        NSColor(srgbRed: 0, green: 0, blue: 1, alpha: 1),
+    ]
+
+    let safeConfig = ConfettiConfig(
+        birthRate: 40, lifetime: 4.5, velocity: 1500,
+        velocityRange: 450, emissionRange: .pi * 0.4,
+        gravity: -750, spin: 12.0, spinRange: 20.0,
+        scale: 0.8, scaleRange: 0.2, scaleSpeed: -0.1,
+        alphaSpeed: -0.15,
+        colors: colors,
+        shapes: [.rectangle, .triangle, .circle]
+    )
+
+    let fakeBounds = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+
+    // ── End-to-End: Full fire cycle ─────────────────────────────────────────
+    // Measures what actually happens when you call confetti: create controller,
+    // fire on screen, tear down.  Uses a real screen and window.
+    guard let screen = NSScreen.main else {
+        print("║ (skipping fire cycle — no screen available)")
+        return results
+    }
+
+    let r1 = benchmark("Full fire cycle (1 screen)", batchSize: 5, runs: 10, warmup: 1) {
+        let ctrl = ConfettiController(
+            config: safeConfig, angles: .default,
+            emissionDuration: 0.15, intensity: 1.0
+        )
+        ctrl.fire(on: [screen])
+        ctrl.cleanup()
+    }
+    printRow(r1)
+    results.append(r1)
+
+    // ── Emitter Creation ────────────────────────────────────────────────────
+    // Warm the texture cache (created once in real usage)
+    blackHole(ConfettiEmitter.createEmitter(
+        at: .zero, angle: .pi / 2, in: fakeBounds,
+        config: safeConfig, intensity: 1.0
+    ))
+
+    // 9 cells (3 colors × 3 shapes) — default config
+    let r2 = benchmark("Emitter creation (9 cells)", batchSize: 500, runs: 20) {
+        blackHole(ConfettiEmitter.createEmitter(
+            at: .zero, angle: .pi / 2, in: fakeBounds,
+            config: safeConfig, intensity: 1.0
+        ))
+    }
+    printRow(r2)
+    results.append(r2)
+
+    // 4 cells (2 colors × 2 shapes) — smaller config
+    let smallConfig = ConfettiConfig(
+        birthRate: 15, lifetime: 3.5, velocity: 800,
+        velocityRange: 200, emissionRange: .pi * 0.4,
+        gravity: -400, spin: 4.0, spinRange: 8.0,
+        scale: 0.6, scaleRange: 0.1, scaleSpeed: -0.05,
+        alphaSpeed: -0.2,
+        colors: [colors[0], colors[1]],
+        shapes: [.rectangle, .circle]
+    )
+    let r3 = benchmark("Emitter creation (4 cells)", batchSize: 500, runs: 20) {
+        blackHole(ConfettiEmitter.createEmitter(
+            at: .zero, angle: .pi / 2, in: fakeBounds,
+            config: smallConfig, intensity: 1.0
+        ))
+    }
+    printRow(r3)
+    results.append(r3)
+
+    // ── Object Creation ─────────────────────────────────────────────────────
+    let r4 = benchmark("Controller init", batchSize: 10000) {
+        blackHole(ConfettiController(
+            config: safeConfig, angles: .default,
+            emissionDuration: 0.15, intensity: 1.0
+        ))
+    }
+    printRow(r4)
+    results.append(r4)
+
+    let r5 = benchmark("Config creation", batchSize: 50000) {
+        blackHole(ConfettiConfig(
+            birthRate: 30, lifetime: 4.5, velocity: 1250,
+            velocityRange: 400, emissionRange: .pi * 0.4,
+            gravity: -750, spin: 8.0, spinRange: 16.0,
+            scale: 0.8, scaleRange: 0.05, scaleSpeed: -0.1,
             alphaSpeed: -0.15,
-            colors: [.systemRed, .systemGreen, .systemBlue, .systemYellow,
-                     .systemOrange, .systemPurple, .systemPink, .cyan],
-            shapes: [.rectangle, .triangle, .circle]
-        )
+            colors: colors,
+            shapes: [.rectangle, .circle]
+        ))
     }
-    results.append(customConfigResult)
-    print("║ \(customConfigResult.description) ║")
+    printRow(r5)
+    results.append(r5)
 
-    // Benchmark 3: Cell count calculation
-    let cellCountResult = benchmark("ConfettiEmitter.cellCount", iterations: 500000) {
-        _ = ConfettiEmitter.cellCount(for: .default)
+    // ── Pure Computation ────────────────────────────────────────────────────
+    let r6 = benchmark("Particle count estimate", batchSize: 100000) {
+        blackHole(ConfettiEmitter.estimatedParticleCount(
+            config: safeConfig, emissionDuration: 0.15, emitterCount: 2
+        ))
     }
-    results.append(cellCountResult)
-    print("║ \(cellCountResult.description) ║")
+    printRow(r6)
+    results.append(r6)
 
-    // Benchmark 4: Particle count estimation
-    let estimateResult = benchmark("estimatedParticleCount", iterations: 500000) {
-        _ = ConfettiEmitter.estimatedParticleCount(
-            config: .default,
-            emissionDuration: 0.15,
-            emitterCount: 2
-        )
+    let r7 = benchmark("Cell count", batchSize: 100000) {
+        blackHole(ConfettiEmitter.cellCount(for: safeConfig))
     }
-    results.append(estimateResult)
-    print("║ \(estimateResult.description) ║")
+    printRow(r7)
+    results.append(r7)
 
-    // Benchmark 5: Controller creation
-    let controllerResult = benchmark("ConfettiController init", iterations: 10000) {
-        _ = ConfettiController(
-            config: .default,
-            angles: .default,
-            emissionDuration: 0.15,
-            intensity: 1.0
-        )
+    print(tableBorder("╚", "═", "╧", "╝"))
+    print("")
+
+    // ── Preset Comparison ───────────────────────────────────────────────────
+    print(fullBorder("╔", "═", "╗"))
+    print("║\(centered("PRESET COMPARISON"))║")
+    print("║\(centered(""))║")
+    print("║ \(lpad("Preset", 15))│ \(rpad("Cells", 6)) │ \(rpad("Emitters", 8)) │ \(rpad("Particles", 9)) │ \(rpad("Lifetime", 8)) │ \(lpad("Style", 15)) ║")
+    print("║\(String(repeating: "─", count: innerWidth))║")
+
+    let presetInfo: [(String, Int, Int, Int, Float, String)] = [
+        ("default",   8, 3, 40,  4.5, "cannons"),
+        ("subtle",    8, 3, 15,  3.5, "cannons"),
+        ("intense",   8, 3, 80,  5.0, "cannons"),
+        ("snow",      2, 1,  4,  7.0, "curtain"),
+        ("fireworks", 8, 3, 100, 3.0, "cannons"),
+    ]
+
+    for (name, colorCount, shapeCount, birthRate, lifetime, style) in presetInfo {
+        let cells = colorCount * shapeCount
+        let emitterCount = style == "curtain" ? 1 : 2
+        let particles = Int(Float(birthRate) * Float(cells) * Float(emitterCount) * 0.15)
+        print("║ \(lpad(name, 15))│ \(rpad(String(cells), 6)) │ \(rpad(String(emitterCount), 8)) │ \(rpad(String(particles), 9)) │ \(rpad(String(format: "%.1fs", lifetime), 8)) │ \(lpad(style, 15)) ║")
     }
-    results.append(controllerResult)
-    print("║ \(controllerResult.description) ║")
 
-    // Benchmark 6: Angles default access
-    let anglesResult = benchmark("CannonAngles.default", iterations: 100000) {
-        _ = ConfettiController.CannonAngles.default
+    print("║\(String(repeating: "─", count: innerWidth))║")
+    print("║\(centered("Cells = colors x shapes.  Particles = birthRate x cells x emitters x 0.15s."))║")
+    print(fullBorder("╚", "═", "╝"))
+    print("")
+
+    // ── Texture Memory ──────────────────────────────────────────────────────
+    print(fullBorder("╔", "═", "╗"))
+    print("║\(centered("TEXTURE MEMORY"))║")
+    print(fullBorder("╠", "═", "╣"))
+
+    let textures: [(String, Int, Int)] = [
+        ("rectangle", 14, 7),
+        ("triangle",  10, 10),
+        ("circle",     8, 8),
+    ]
+    var totalBytes = 0
+    for (name, w, h) in textures {
+        let bytes = w * h * 4
+        totalBytes += bytes
+        let line = "  \(lpad(name, 12))  \(rpad(String(w), 2))x\(lpad(String(h), 2)) RGBA = \(rpad(String(bytes), 4)) bytes"
+        print("║\(lpad(line, innerWidth))║")
     }
-    results.append(anglesResult)
-    print("║ \(anglesResult.description) ║")
+    let totalLine = "  Total cached: \(totalBytes) bytes (created once, reused across all emitters)"
+    print("║\(lpad(totalLine, innerWidth))║")
+    print(fullBorder("╚", "═", "╝"))
+    print("")
 
-    // Benchmark 7: Custom angles creation
-    let customAnglesResult = benchmark("CannonAngles custom init", iterations: 100000) {
-        _ = ConfettiController.CannonAngles(left: .pi * 0.47, right: .pi * 0.53)
+    // ── Summary ─────────────────────────────────────────────────────────────
+    let totalIters = results.reduce(0) { $0 + $1.totalIterations }
+    let totalNs = results.reduce(0.0) { $0 + $1.meanNs * Double($1.totalIterations) }
+    print(String(format: "Total: %d iterations in %.1f ms", totalIters, totalNs / 1_000_000))
+    print("")
+
+    return results
+}
+
+// MARK: - Frame Counter
+
+/// Counts display refresh callbacks to measure rendering FPS
+@available(macOS 14.0, *)
+class FrameCounter: NSObject {
+    private var timestamps: [Double] = []
+    private var displayLink: CADisplayLink?
+
+    func start(screen: NSScreen) {
+        timestamps.reserveCapacity(500)
+        let link = screen.displayLink(target: self, selector: #selector(onFrame(_:)))
+        link.add(to: RunLoop.main, forMode: .common)
+        displayLink = link
     }
-    results.append(customAnglesResult)
-    print("║ \(customAnglesResult.description) ║")
 
-    // Benchmark 8: Shape iteration
-    let shapesResult = benchmark("ConfettiShape.allCases iteration", iterations: 100000) {
-        for shape in ConfettiShape.allCases {
-            _ = shape
+    @objc private func onFrame(_ link: CADisplayLink) {
+        timestamps.append(link.timestamp)
+    }
+
+    struct FrameStats {
+        let totalFrames: Int
+        let duration: Double
+        let avgFps: Double
+        let minFps: Double
+        let p1Fps: Double
+        let droppedFrames: Int
+    }
+
+    func stop() -> FrameStats {
+        displayLink?.invalidate()
+        displayLink = nil
+
+        guard timestamps.count >= 2 else {
+            return FrameStats(totalFrames: 0, duration: 0, avgFps: 0, minFps: 0, p1Fps: 0, droppedFrames: 0)
         }
+
+        let duration = timestamps.last! - timestamps.first!
+        let avgFps = Double(timestamps.count - 1) / duration
+
+        var intervals = [Double]()
+        intervals.reserveCapacity(timestamps.count - 1)
+        for i in 1..<timestamps.count {
+            intervals.append(timestamps[i] - timestamps[i - 1])
+        }
+
+        let sortedIntervals = intervals.sorted()
+        let medianInterval = sortedIntervals[sortedIntervals.count / 2]
+
+        // Worst 1% frame time → lowest sustained FPS
+        let p99Interval = sortedIntervals[min(Int(Double(sortedIntervals.count) * 0.99), sortedIntervals.count - 1)]
+        let p1Fps = 1.0 / p99Interval
+
+        let worstInterval = sortedIntervals.last ?? medianInterval
+        let minFps = 1.0 / worstInterval
+
+        // Dropped = interval > 1.5x median (missed vsync)
+        let dropped = intervals.filter { $0 > medianInterval * 1.5 }.count
+
+        return FrameStats(
+            totalFrames: timestamps.count,
+            duration: duration,
+            avgFps: avgFps,
+            minFps: minFps,
+            p1Fps: p1Fps,
+            droppedFrames: dropped
+        )
     }
-    results.append(shapesResult)
-    print("║ \(shapesResult.description) ║")
-
-    print(tableBorder(left: "╚", fill: "═", sep: "╧", right: "╝"))
-
-    // Summary
-    print("")
-    print("══════════════════════════════════════════════════════════════════════════════════════════════════")
-    print("SUMMARY")
-    print("══════════════════════════════════════════════════════════════════════════════════════════════════")
-
-    let totalBenchmarkTime = results.reduce(0) { $0 + $1.totalTime }
-    print(String(format: "Total benchmark time:        %.2f ms", totalBenchmarkTime * 1000))
-    print(String(format: "Total iterations:            %d", results.reduce(0) { $0 + $1.iterations }))
-    print("")
-
-    // Particle statistics
-    print("══════════════════════════════════════════════════════════════════════════════════════════════════")
-    print("PARTICLE STATISTICS (default config)")
-    print("══════════════════════════════════════════════════════════════════════════════════════════════════")
-    let config = ConfettiConfig.default
-    let cellCount = ConfettiEmitter.cellCount(for: config)
-    let particleCount = ConfettiEmitter.estimatedParticleCount(
-        config: config,
-        emissionDuration: 0.15,
-        emitterCount: 2
-    )
-
-    print("• Colors:                    \(config.colors.count)")
-    print("• Shapes:                    \(config.shapes.count)")
-    print("• Cell types per emitter:    \(cellCount)")
-    print("• Total cell types:          \(cellCount * 2) (2 emitters)")
-    print("• Birth rate per cell:       \(config.birthRate)/sec")
-    print("• Emission duration:         0.15 sec")
-    print("• Estimated particles:       ~\(particleCount)")
-    print("• Particle lifetime:         \(config.lifetime) sec")
-    print("• Velocity:                  \(config.velocity) (±\(config.velocityRange))")
-    print("• Gravity:                   \(config.gravity)")
-    print("• Scale:                     \(config.scale) (±\(config.scaleRange))")
-    print("")
-
-    // Memory estimate
-    print("══════════════════════════════════════════════════════════════════════════════════════════════════")
-    print("MEMORY ESTIMATE")
-    print("══════════════════════════════════════════════════════════════════════════════════════════════════")
-    let rectBytes = 14 * 7 * 4   // 14x7 RGBA
-    let triBytes = 10 * 10 * 4   // 10x10 RGBA
-    let circBytes = 8 * 8 * 4    // 8x8 RGBA
-    let textureMemory = rectBytes + triBytes + circBytes
-    print("• Rectangle texture:         \(rectBytes) bytes (14×7 RGBA)")
-    print("• Triangle texture:          \(triBytes) bytes (10×10 RGBA)")
-    print("• Circle texture:            \(circBytes) bytes (8×8 RGBA)")
-    print("• Total cached textures:     \(textureMemory) bytes")
-    print("• Per-particle overhead:     ~64 bytes (estimated)")
-    print("• Peak memory (~200 particles): ~\(200 * 64 / 1024) KB")
-    print("")
-
-    // Performance notes
-    print("══════════════════════════════════════════════════════════════════════════════════════════════════")
-    print("PERFORMANCE NOTES")
-    print("══════════════════════════════════════════════════════════════════════════════════════════════════")
-    print("• Textures are cached at first use (one-time cost)")
-    print("• CAEmitterLayer uses hardware acceleration (GPU)")
-    print("• renderMode = .oldestFirst for optimal batching")
-    print("• drawsAsynchronously = true for background rendering")
-    print("• Typical animation: 60fps, <10% CPU, <5MB RAM")
-    print("")
-    print("NOTE: CAEmitterLayer benchmarks require a display context.")
-    print("      Run 'confetti' directly to test full rendering performance.")
-    print("")
 }
 
 // MARK: - Main
 
-print(fullBorder(left: "╔", fill: "═", right: "╗"))
-print("║" + centered("CONFETTI BENCHMARK SUITE v1.0") + "║")
-print(fullBorder(left: "╚", fill: "═", right: "╝"))
-print("")
-print("System: macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
-print("Date:   \(Date())")
-print("CPU:    \(ProcessInfo.processInfo.processorCount) cores")
-print("Memory: \(ProcessInfo.processInfo.physicalMemory / 1_073_741_824) GB")
+// AppKit types (NSColor, ConfettiController/NSWindow) require NSApplication
+// to be initialised.  Without it, even NSColor(srgbRed:...) segfaults.
+// We mirror the confetti CLI pattern: run benchmarks inside the app lifecycle.
 
-runBenchmarks()
+class BenchmarkDelegate: NSObject, NSApplicationDelegate {
+    private var controller: ConfettiController?
 
-print("Benchmarks complete!")
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+
+        // Phase 1: Run timing benchmarks (synchronous)
+        let _ = runBenchmarks()
+
+        // Phase 2: Visual integration test — fire real confetti,
+        // measure fire() latency and track FPS via CADisplayLink.
+        let colors = [
+            NSColor(srgbRed: 0.95, green: 0.2, blue: 0.2, alpha: 1),
+            NSColor(srgbRed: 0.2, green: 0.5, blue: 0.95, alpha: 1),
+            NSColor(srgbRed: 0.95, green: 0.85, blue: 0.1, alpha: 1),
+            NSColor(srgbRed: 0.2, green: 0.8, blue: 0.3, alpha: 1),
+            NSColor(srgbRed: 0.95, green: 0.5, blue: 0.1, alpha: 1),
+            NSColor(srgbRed: 0.6, green: 0.3, blue: 0.9, alpha: 1),
+            NSColor(srgbRed: 0.95, green: 0.4, blue: 0.6, alpha: 1),
+            NSColor(srgbRed: 0.0, green: 0.8, blue: 0.85, alpha: 1),
+        ]
+        let config = ConfettiConfig(
+            birthRate: 40, lifetime: 4.5, velocity: 1500,
+            velocityRange: 450, emissionRange: .pi * 0.4,
+            gravity: -750, spin: 12.0, spinRange: 20.0,
+            scale: 0.8, scaleRange: 0.2, scaleSpeed: -0.1,
+            alphaSpeed: -0.15,
+            colors: colors,
+            shapes: [.rectangle, .triangle, .circle]
+        )
+
+        let ctrl = ConfettiController(
+            config: config, angles: .default,
+            emissionDuration: 0.15, intensity: 1.0
+        )
+
+        if #available(macOS 14.0, *) {
+            runVisualBenchmark(controller: ctrl, config: config)
+        } else {
+            runVisualBenchmarkLegacy(controller: ctrl, config: config)
+        }
+    }
+
+    @available(macOS 14.0, *)
+    private func runVisualBenchmark(controller ctrl: ConfettiController, config: ConfettiConfig) {
+        let totalRuns = 5
+        let animDuration = 3.0
+        let cooldownDuration = 0.5  // Gap between runs for window server to settle
+
+        print(fullBorder("╔", "═", "╗"))
+        print("║\(centered("VISUAL BENCHMARK (\(totalRuns) runs)"))║")
+        print(fullBorder("╠", "═", "╣"))
+
+        var allFireNs: [Double] = []
+        var allAvgFps: [Double] = []
+        var allMinFps: [Double] = []
+        var allP1Fps: [Double] = []
+        var allDropped: [Int] = []
+        var allFrames: [Int] = []
+
+        func runIteration(_ index: Int) {
+            guard index < totalRuns else {
+                // All runs complete — print aggregated results
+                printAggregatedResults(
+                    fireNs: allFireNs, avgFps: allAvgFps, minFps: allMinFps,
+                    p1Fps: allP1Fps, dropped: allDropped, frames: allFrames
+                )
+                return
+            }
+
+            let run = index + 1
+            print("║\(lpad("  Run \(run)/\(totalRuns)...", innerWidth))║")
+
+            // Create a fresh controller for each run
+            let iterCtrl = ConfettiController(
+                config: config, angles: .default,
+                emissionDuration: 0.15, intensity: 1.0
+            )
+
+            let frameCounter = FrameCounter()
+
+            // Measure fire() latency
+            let t0 = now()
+            iterCtrl.fire()
+            let t1 = now()
+            let fireNs = Double(t1 &- t0)
+            allFireNs.append(fireNs)
+
+            self.controller = iterCtrl
+            frameCounter.start(screen: NSScreen.main ?? NSScreen.screens[0])
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + animDuration) { [self] in
+                let stats = frameCounter.stop()
+                controller?.cleanup()
+                controller = nil
+
+                allAvgFps.append(stats.avgFps)
+                allMinFps.append(stats.minFps)
+                allP1Fps.append(stats.p1Fps)
+                allDropped.append(stats.droppedFrames)
+                allFrames.append(stats.totalFrames)
+
+                print("║\(lpad("    fire(): \(fmt(fireNs))  avg: \(String(format: "%.1f", stats.avgFps)) fps  min: \(String(format: "%.1f", stats.minFps)) fps  dropped: \(stats.droppedFrames)", innerWidth))║")
+
+                // Cooldown before next iteration
+                DispatchQueue.main.asyncAfter(deadline: .now() + cooldownDuration) {
+                    runIteration(index + 1)
+                }
+            }
+        }
+
+        runIteration(0)
+    }
+
+    @available(macOS 14.0, *)
+    private func printAggregatedResults(
+        fireNs: [Double], avgFps: [Double], minFps: [Double],
+        p1Fps: [Double], dropped: [Int], frames: [Int]
+    ) {
+        print("║\(String(repeating: "─", count: innerWidth))║")
+
+        let sortedFire = fireNs.sorted()
+        let sortedAvg = avgFps.sorted()
+        let sortedMin = minFps.sorted()
+        let sortedP1 = p1Fps.sorted()
+
+        let medianFire = sortedFire[sortedFire.count / 2]
+        let medianAvg = sortedAvg[sortedAvg.count / 2]
+        let worstMin = sortedMin.first ?? 0
+        let medianP1 = sortedP1[sortedP1.count / 2]
+        let totalDropped = dropped.reduce(0, +)
+        let totalFrames = frames.reduce(0, +)
+
+        // Stddev of avg FPS
+        let meanAvg = sortedAvg.reduce(0, +) / Double(sortedAvg.count)
+        let varianceAvg = sortedAvg.reduce(0) { $0 + ($1 - meanAvg) * ($1 - meanAvg) } / Double(sortedAvg.count)
+        let stddevAvg = varianceAvg.squareRoot()
+
+        print("║\(centered("AGGREGATED (\(fireNs.count) runs)"))║")
+        print("║\(String(repeating: "─", count: innerWidth))║")
+        print("║\(lpad("  fire() latency (median): \(fmt(medianFire))", innerWidth))║")
+        print("║\(lpad("  fire() latency (range):  \(fmt(sortedFire.first ?? 0)) – \(fmt(sortedFire.last ?? 0))", innerWidth))║")
+        print("║\(lpad("  Average FPS (median):    \(String(format: "%.1f", medianAvg)) ± \(String(format: "%.1f", stddevAvg))", innerWidth))║")
+        print("║\(lpad("  Average FPS (range):     \(String(format: "%.1f", sortedAvg.first ?? 0)) – \(String(format: "%.1f", sortedAvg.last ?? 0))", innerWidth))║")
+        print("║\(lpad("  1% low FPS (median):     \(String(format: "%.1f", medianP1))", innerWidth))║")
+        print("║\(lpad("  Min FPS (worst across runs): \(String(format: "%.1f", worstMin))", innerWidth))║")
+        print("║\(lpad("  Total dropped frames:    \(totalDropped) / \(totalFrames)", innerWidth))║")
+        print(fullBorder("╚", "═", "╝"))
+        print("")
+        print("Benchmarks complete!")
+        NSApp.terminate(nil)
+    }
+
+    private func runVisualBenchmarkLegacy(controller ctrl: ConfettiController, config: ConfettiConfig) {
+        let totalRuns = 5
+        let animDuration = 3.0
+        let cooldownDuration = 0.5
+
+        print(fullBorder("╔", "═", "╗"))
+        print("║\(centered("VISUAL BENCHMARK (\(totalRuns) runs, no FPS — requires macOS 14+)"))║")
+        print(fullBorder("╠", "═", "╣"))
+
+        var allFireNs: [Double] = []
+
+        func runIteration(_ index: Int) {
+            guard index < totalRuns else {
+                let sorted = allFireNs.sorted()
+                let median = sorted[sorted.count / 2]
+                print("║\(String(repeating: "─", count: innerWidth))║")
+                print("║\(lpad("  fire() latency (median): \(fmt(median))", innerWidth))║")
+                print("║\(lpad("  fire() latency (range):  \(fmt(sorted.first ?? 0)) – \(fmt(sorted.last ?? 0))", innerWidth))║")
+                print(fullBorder("╚", "═", "╝"))
+                print("")
+                print("Benchmarks complete!")
+                NSApp.terminate(nil)
+                return
+            }
+
+            let run = index + 1
+            print("║\(lpad("  Run \(run)/\(totalRuns)...", innerWidth))║")
+
+            let iterCtrl = ConfettiController(
+                config: config, angles: .default,
+                emissionDuration: 0.15, intensity: 1.0
+            )
+
+            let t0 = now()
+            iterCtrl.fire()
+            let t1 = now()
+            let fireNs = Double(t1 &- t0)
+            allFireNs.append(fireNs)
+
+            controller = iterCtrl
+            print("║\(lpad("    fire(): \(fmt(fireNs))", innerWidth))║")
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + animDuration) { [self] in
+                controller?.cleanup()
+                controller = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + cooldownDuration) {
+                    runIteration(index + 1)
+                }
+            }
+        }
+
+        runIteration(0)
+    }
+}
+
+let app = NSApplication.shared
+let delegate = BenchmarkDelegate()
+app.delegate = delegate
+app.run()

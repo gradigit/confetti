@@ -374,15 +374,69 @@ Add a "Run Shell Script" action to any workflow:
 
 Confetti is optimized for smooth 60fps animation:
 
-- **Texture caching** - Particle images created once at startup
+- **Texture caching** - Particle images created once at startup (1,048 bytes total)
 - **Async rendering** - `drawsAsynchronously = true`
 - **Optimal batching** - `renderMode = .oldestFirst`
 - **Minimal allocations** - Reuses configurations
 
-Typical resource usage:
-- ~288 particles per burst
+### Benchmark Results
+
+Run `swift build -c release --product benchmark && .build/release/benchmark` to reproduce.
+
+Results on Apple M1 Pro (10 cores, 24 GB):
+
+| Operation | Median | p95 | Min | Stddev |
+|---|---|---|---|---|
+| Full fire cycle (1 screen) | 23.28 ms | 28.96 ms | 20.24 ms | 2.58 ms |
+| Emitter creation (9 cells) | 13.09 us | 16.03 us | 12.47 us | 1.23 us |
+| Emitter creation (4 cells) | 6.32 us | 7.66 us | 6.14 us | 360.9 ns |
+| Controller init | 38.2 ns | 40.7 ns | 37.9 ns | 0.7 ns |
+| Config creation | 37.7 ns | 38.9 ns | 36.6 ns | 0.5 ns |
+| Particle count estimate | 8.5 ns | 9.2 ns | 8.1 ns | 0.4 ns |
+| Cell count | 7.0 ns | 7.3 ns | 6.9 ns | 0.1 ns |
+
+### Visual Benchmark (5 runs)
+
+| Metric | Value |
+|---|---|
+| fire() latency (median) | 2.56 ms |
+| fire() latency (cold start) | 83.27 ms |
+| Average FPS | 60.0 +/- 0.1 |
+| 1% low FPS | 60.0 |
+| Min FPS (worst run) | 30.0 |
+| Dropped frames | 1 / 944 (0.1%) |
+
+The cold-start fire() creates transparent windows and flushes the first `CATransaction`. Subsequent calls are ~2.5 ms. The single dropped frame occurs on the first run during window creation; runs 2-5 hold a perfect 60 FPS with zero drops.
+
+### Preset Overview
+
+| Preset | Cells | Emitters | Particles | Lifetime | Style |
+|---|---|---|---|---|---|
+| default | 24 | 2 | 288 | 4.5s | cannons |
+| subtle | 24 | 2 | 108 | 3.5s | cannons |
+| intense | 24 | 2 | 576 | 5.0s | cannons |
+| snow | 2 | 1 | 1 | 7.0s | curtain |
+| fireworks | 24 | 2 | 720 | 3.0s | cannons |
+
+*Particles = birthRate x cells x emitters x 0.15s emission duration.*
+
+### Texture Memory
+
+| Shape | Size | Bytes |
+|---|---|---|
+| rectangle | 14x7 | 392 |
+| triangle | 10x10 | 400 |
+| circle | 8x8 | 256 |
+| **Total** | | **1,048** |
+
+*Textures are created once and reused across all emitters.*
+
+### Runtime
+
+- ~288 particles per burst (default preset)
 - ~12MB peak memory
 - <10% CPU during animation
+- Solid 60 FPS with <0.2% dropped frames
 
 ## Development
 
