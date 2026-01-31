@@ -16,10 +16,10 @@ A lightweight, high-performance confetti animation for macOS. Fire colorful conf
 
 ## Installation
 
-### Homebrew (coming soon)
+### Homebrew
 
 ```bash
-brew install confetti
+brew install gradigit/tap/confetti
 ```
 
 ### Build from source
