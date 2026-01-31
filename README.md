@@ -1,6 +1,6 @@
 # Confetti 🎉
 
-A lightweight, high-performance confetti animation for macOS. Fire colorful confetti from the corners of your screen to celebrate achievements, completed tasks, or any special moment.
+A lightweight, high-performance confetti animation for macOS. Fire colorful confetti from the corners of your screen, or gentle snow from the top edge, to celebrate achievements, completed tasks, or any special moment.
 
 ![macOS](https://img.shields.io/badge/macOS-12.0%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
@@ -97,7 +97,7 @@ confetti --help
 | `default` | Balanced celebration confetti |
 | `subtle` | Gentle, understated — fewer particles, slower |
 | `intense` | High-energy — more particles, faster, bigger |
-| `snow` | Gentle falling snow effect |
+| `snow` | Gentle falling snow from the top edge |
 | `fireworks` | Fast explosive burst with heavy gravity |
 
 ```bash
@@ -122,6 +122,7 @@ The config file is JSON with all fields optional:
 ```json
 {
   "birthRate": 60,
+  "emissionStyle": "curtain",
   "gravity": -900,
   "lifetime": 5.0,
   "scale": 1.0,
@@ -177,7 +178,8 @@ ConfettiConfig(
     scaleSpeed: -0.1,      // Scale change over time
     alphaSpeed: -0.15,    // Fade out speed
     colors: [...],        // Array of NSColor
-    shapes: [...]         // Array of ConfettiShape
+    shapes: [...],        // Array of ConfettiShape
+    emissionStyle: .cannons // .cannons (corners) or .curtain (top edge)
 )
 ```
 
@@ -305,6 +307,42 @@ When the user says "celebrate", "confetti", or "party", run:
 if [ $? -eq 0 ]; then
     ~/.local/bin/confetti -d 2 &
 fi
+```
+
+## Automation
+
+### Apple Shortcuts
+
+Create a Shortcut with the "Run Shell Script" action:
+
+```bash
+~/.local/bin/confetti
+```
+
+Use any CLI flags in the script — presets, physics overrides, duration:
+
+```bash
+~/.local/bin/confetti -p intense -d 3
+```
+
+### AppleScript
+
+```applescript
+do shell script "~/.local/bin/confetti &"
+```
+
+With a preset:
+
+```applescript
+do shell script "~/.local/bin/confetti -p snow &"
+```
+
+### Automator
+
+Add a "Run Shell Script" action to any workflow:
+
+```bash
+~/.local/bin/confetti
 ```
 
 ## Architecture

@@ -16,5 +16,7 @@
 - Input validation and error messages for CLI arguments
 - Main thread preconditions on public API
 - Cancellable emission timer to prevent cleanup races
+- Emission styles: `.cannons` (corner cannons) and `.curtain` (top-edge line emitter)
+- Snow preset uses curtain emission with gravity-driven fall and gentle lateral sway
 
 [1.0.0]: https://github.com/gradigit/confetti/releases/tag/v1.0.0

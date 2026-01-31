@@ -15,10 +15,10 @@ cp .build/release/confetti ~/.local/bin/ # Install locally
 
 | File | Purpose |
 |------|---------|
-| `Sources/ConfettiKit/ConfettiConfig.swift` | Particle config struct and shape enum |
+| `Sources/ConfettiKit/ConfettiConfig.swift` | Particle config, shape enum, emission styles, and presets |
 | `Sources/ConfettiKit/ConfettiEmitter.swift` | Core emitter + texture caching |
 | `Sources/ConfettiKit/ConfettiController.swift` | Orchestrates multi-screen confetti display |
-| `Sources/ConfettiKit/ConfettiWindow.swift` | Transparent click-through overlay window |
+| `Sources/ConfettiKit/ConfettiWindow.swift` | Transparent click-through overlay window (internal) |
 | `Sources/confetti/main.swift` | CLI entry point with arg parsing |
 | `Sources/confetti/ConfigFile.swift` | JSON config file loading/saving |
 | `Sources/benchmark/main.swift` | Performance benchmark suite |
@@ -29,7 +29,8 @@ cp .build/release/confetti ~/.local/bin/ # Install locally
 - **confetti** executable: CLI with presets, physics flags, and config file support
 - **benchmark** executable: Performance measurement (needs display context)
 - Particle system uses `CAEmitterLayer` + `CAEmitterCell` (hardware-accelerated)
-- Textures are cached statically on first access
+- Two emission styles: `.cannons` (corner cannons for confetti) and `.curtain` (top-edge line emitter for snow)
+- Textures are cached statically on first access (`static let` for thread-safe lazy init)
 - Windows use `CATransaction.flush()` to ensure visibility before emitting
 
 ## Code Style
