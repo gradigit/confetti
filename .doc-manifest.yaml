@@ -1,0 +1,19 @@
+last_synced: "2026-01-31"
+docs:
+  - path: README.md
+    type: readme
+    last_updated: "2026-01-31"
+    references:
+      - Sources/ConfettiKit/ConfettiEmitter.swift
+      - Sources/ConfettiKit/ConfettiController.swift
+      - Sources/confetti/main.swift
+      - Package.swift
+  - path: CLAUDE.md
+    type: project-instructions
+    last_updated: "2026-01-31"
+    references:
+      - Sources/ConfettiKit/ConfettiEmitter.swift
+      - Sources/ConfettiKit/ConfettiController.swift
+      - Sources/ConfettiKit/ConfettiWindow.swift
+      - Sources/confetti/main.swift
+      - Sources/benchmark/main.swift
