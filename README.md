@@ -1,6 +1,6 @@
 # Confetti 🎉
 
-A lightweight, high-performance confetti animation for macOS, inspired by [Raycast's confetti effect](https://raycast.com). Unlike Raycast's version (which is limited to its own app window), Confetti fires across all connected displays simultaneously — covering your entire screen setup with colorful confetti from the corners, or gentle snow from the top edge.
+Confetti animation for macOS. A small dopamine hit for your development workflow. Fires from the corners of every connected display at once, or drops gentle snow from the top edge. Inspired by [Raycast's confetti](https://raycast.com), but that one only fires on a single display, requires Raycast to be installed, and is closed source. This is standalone, multi-monitor, and MIT licensed.
 
 ![macOS](https://img.shields.io/badge/macOS-12.0%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
@@ -8,11 +8,11 @@ A lightweight, high-performance confetti animation for macOS, inspired by [Rayca
 
 ## Features
 
-- 🚀 **Fast** - Hardware-accelerated Core Animation with optimized rendering
-- 🖥️ **Multi-monitor** - Works across all connected displays
-- 🎨 **Customizable** - Configurable colors, shapes, physics, and more
-- 📦 **Library + CLI** - Use as a Swift package or standalone command
-- 🪶 **Lightweight** - No dependencies, minimal footprint
+- Hardware-accelerated via Core Animation
+- Works across all connected displays
+- Configurable colors, shapes, and physics
+- Usable as a Swift package or standalone CLI
+- No dependencies
 
 ## Installation
 
@@ -24,7 +24,7 @@ brew install gradigit/tap/confetti
 
 ### Download
 
-Download the latest universal binary from [GitHub Releases](https://github.com/gradigit/confetti/releases/latest):
+Grab the universal binary from [GitHub Releases](https://github.com/gradigit/confetti/releases/latest):
 
 ```bash
 curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.0.0.tar.gz | tar xz
@@ -43,7 +43,7 @@ swift build -c release
 cp .build/release/confetti ~/.local/bin/
 ```
 
-### Swift Package Manager
+### Swift package manager
 
 Add to your `Package.swift`:
 
@@ -55,7 +55,7 @@ dependencies: [
 
 ## Usage
 
-### Command Line
+### Command line
 
 ```bash
 # Fire confetti on all screens
@@ -91,7 +91,7 @@ confetti --help
 | `-v, --version` | Show version | - |
 | `-h, --help` | Show help | - |
 
-### Physics Flags
+### Physics flags
 
 | Flag | Description | Default |
 |------|-------------|---------|
@@ -117,7 +117,7 @@ confetti --help
 confetti --presets
 ```
 
-### Config File
+### Config file
 
 Save your preferred settings to `~/.config/confetti/config.json`:
 
@@ -145,7 +145,7 @@ The config file is JSON with all fields optional:
 
 **Priority:** defaults < config file < preset < CLI flags
 
-### Swift Library
+### Swift library
 
 ```swift
 import ConfettiKit
@@ -173,7 +173,7 @@ controller.fire(on: [NSScreen.main!])
 controller.cleanup()
 ```
 
-### Configuration Options
+### Configuration options
 
 ```swift
 ConfettiConfig(
@@ -195,13 +195,13 @@ ConfettiConfig(
 )
 ```
 
-## Use Cases
+## Use cases
 
-### AI Coding Agent Hook
+### AI coding agent hook
 
-Fire confetti every time Claude Code (or any AI agent) finishes a task. See [Claude Code Integration](#claude-code-integration) below for setup.
+Fire confetti every time Claude Code (or any AI agent) finishes a task. See [Claude Code integration](#claude-code-integration) below.
 
-### Shell Aliases
+### Shell aliases
 
 Add to your `.zshrc` or `.bashrc`:
 
@@ -219,9 +219,9 @@ alias ctest='swift test && confetti'
 alias deploy='./deploy.sh && confetti -d 5'
 ```
 
-### Long Command Notification
+### Long command notification
 
-Fire confetti when a long-running terminal command finishes. Add to your `.zshrc`:
+Fire confetti when a long-running terminal command finishes. Add to `.zshrc`:
 
 ```bash
 # Notify with confetti after commands that take longer than 30 seconds
@@ -239,7 +239,7 @@ add-zsh-hook preexec __confetti_preexec
 add-zsh-hook precmd __confetti_precmd
 ```
 
-### Keyboard Shortcut (Raycast/Alfred)
+### Keyboard shortcut (Raycast/Alfred)
 
 Create a Raycast script or Alfred workflow:
 
@@ -248,9 +248,9 @@ Create a Raycast script or Alfred workflow:
 ~/.local/bin/confetti
 ```
 
-### Swift Library
+### Swift library
 
-Add confetti to your own macOS app:
+Use confetti in your own macOS app:
 
 ```swift
 import ConfettiKit
@@ -265,11 +265,11 @@ func taskCompleted() {
 }
 ```
 
-## Claude Code Integration
+## Claude Code integration
 
-### Using as a Hook
+### Hook
 
-Add confetti to celebrate completed tasks in Claude Code. Create or edit `~/.claude/settings.json`:
+Fire confetti when Claude Code finishes a task. Add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -288,9 +288,9 @@ Add confetti to celebrate completed tasks in Claude Code. Create or edit `~/.cla
 }
 ```
 
-### Using as a Skill
+### Skill
 
-Create a Claude Code skill at `~/.claude/skills/confetti.md`:
+Create a skill at `~/.claude/skills/confetti.md`:
 
 ```markdown
 ---
@@ -315,7 +315,7 @@ When the user says "celebrate", "confetti", or "party", run:
 \`\`\`
 ```
 
-### Programmatic Usage in Scripts
+### Scripts
 
 ```bash
 #!/bin/bash
@@ -328,7 +328,7 @@ fi
 
 ## Automation
 
-### Apple Shortcuts
+### Apple shortcuts
 
 Create a Shortcut with the "Run Shell Script" action:
 
@@ -362,9 +362,9 @@ Add a "Run Shell Script" action to any workflow:
 ~/.local/bin/confetti
 ```
 
-## AI Agent Instructions
+## AI agent instructions
 
-> This section is for AI coding agents (Claude Code, Gemini CLI, Copilot, etc.) that encounter this repository. Follow these steps to install confetti and set it up for the user.
+> For AI coding agents (Claude Code, Gemini CLI, Copilot, etc.). Install confetti and set it up for the user.
 
 ### Install
 
@@ -386,7 +386,7 @@ confetti --version
 
 ### Set up Claude Code hook
 
-Add a Stop hook so confetti fires every time the agent finishes a task. Edit or create `~/.claude/settings.json`:
+Add a Stop hook so confetti fires when the agent finishes a task. Edit or create `~/.claude/settings.json`:
 
 ```json
 {
@@ -436,18 +436,16 @@ Run `confetti` to verify the animation appears on screen. It exits automatically
 
 ## Performance
 
-Confetti is optimized for smooth 60fps animation:
+Rendering is handled entirely by Core Animation on the GPU. The CPU side is just setup.
 
-- **Texture caching** - Particle images created once at startup (1,048 bytes total)
-- **Async rendering** - `drawsAsynchronously = true`
-- **Optimal batching** - `renderMode = .oldestFirst`
-- **Minimal allocations** - Reuses configurations
+- Particle textures are created once at startup (1,048 bytes total)
+- Emitter layers use `drawsAsynchronously` and `renderMode = .oldestFirst`
 
-### Benchmark Results
+### Benchmark results
 
 Run `swift build -c release --product benchmark && .build/release/benchmark` to reproduce.
 
-Results on MacBook Air 13" with Apple M4 (10 cores, 24 GB):
+MacBook Air 13" with Apple M4 (10 cores, 24 GB):
 
 | Operation | Median | p95 | Min | Stddev |
 |---|---|---|---|---|
@@ -459,7 +457,7 @@ Results on MacBook Air 13" with Apple M4 (10 cores, 24 GB):
 | Particle count estimate | 8.5 ns | 9.2 ns | 8.1 ns | 0.4 ns |
 | Cell count | 7.0 ns | 7.3 ns | 6.9 ns | 0.1 ns |
 
-### Visual Benchmark (5 runs)
+### Visual benchmark (5 runs)
 
 | Metric | Value |
 |---|---|
@@ -470,9 +468,9 @@ Results on MacBook Air 13" with Apple M4 (10 cores, 24 GB):
 | Min FPS (worst run) | 30.0 |
 | Dropped frames | 1 / 944 (0.1%) |
 
-The cold-start fire() creates transparent windows and flushes the first `CATransaction`. Subsequent calls are ~2.5 ms. The single dropped frame occurs on the first run during window creation; runs 2-5 hold a perfect 60 FPS with zero drops.
+The first fire() call takes ~83 ms because it creates transparent windows and flushes the initial `CATransaction`. After that, ~2.5 ms. One dropped frame out of 944, during window creation on the first run. Runs 2-5 had zero drops at 60 FPS.
 
-### Preset Overview
+### Preset overview
 
 | Preset | Cells | Emitters | Particles | Lifetime | Style |
 |---|---|---|---|---|---|
@@ -484,7 +482,7 @@ The cold-start fire() creates transparent windows and flushes the first `CATrans
 
 *Particles = birthRate x cells x emitters x 0.15s emission duration.*
 
-### Texture Memory
+### Texture memory
 
 | Shape | Size | Bytes |
 |---|---|---|
@@ -498,26 +496,26 @@ The cold-start fire() creates transparent windows and flushes the first `CATrans
 ### Runtime
 
 - ~288 particles per burst (default preset)
-- ~12MB peak memory
-- <10% CPU during animation
-- Solid 60 FPS with <0.2% dropped frames
+- ~12 MB peak memory
+- Under 10% CPU during animation
+- 60 FPS with under 0.2% dropped frames
 
 ## Development
 
-### Building
+### Build
 
 ```bash
 swift build              # Debug build
 swift build -c release   # Release build
 ```
 
-### Testing
+### Test
 
 ```bash
 swift test               # Run all tests (requires Xcode)
 ```
 
-### Project Structure
+### Project structure
 
 ```
 confetti/
@@ -543,8 +541,6 @@ confetti/
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
@@ -559,4 +555,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - Inspired by [Raycast's confetti](https://raycast.com)
 - Built with Core Animation's `CAEmitterLayer`
-- Thanks to [NSHipster](https://nshipster.com/caemitterlayer/) for CAEmitterLayer documentation
+- [NSHipster's CAEmitterLayer writeup](https://nshipster.com/caemitterlayer/) was a useful reference
