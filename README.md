@@ -201,21 +201,24 @@ ConfettiConfig(
 
 Fire confetti every time Claude Code (or any AI agent) finishes a task. See [Claude Code integration](#claude-code-integration) below.
 
+### Shell function
+
+Wrap the binary so it always runs in the background. Add to `.zshrc`:
+
+```bash
+confetti() { (~/.local/bin/confetti "$@" &) 2>/dev/null }
+```
+
+Now `confetti`, `confetti -p snow`, etc. all return instantly.
+
 ### Shell aliases
 
 Add to your `.zshrc` or `.bashrc`:
 
 ```bash
-# Celebrate git push
 alias gpush='git push && confetti'
-
-# Celebrate successful builds
 alias cbuild='swift build && confetti'
-
-# Celebrate passing tests
 alias ctest='swift test && confetti'
-
-# Celebrate deployment
 alias deploy='./deploy.sh && confetti -d 5'
 ```
 
@@ -267,9 +270,9 @@ func taskCompleted() {
 
 ## Claude Code integration
 
-### Hook
+### Hooks
 
-Fire confetti when Claude Code finishes a task. Add to `~/.claude/settings.json`:
+Use different presets for different events. Add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -283,10 +286,22 @@ Fire confetti when Claude Code finishes a task. Add to `~/.claude/settings.json`
           }
         ]
       }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "(~/.local/bin/confetti -p snow &) 2>/dev/null"
+          }
+        ]
+      }
     ]
   }
 }
 ```
+
+`Stop` fires the default cannons when Claude finishes a task. `PermissionRequest` fires gentle snow when Claude needs your input.
 
 ### Skill
 
@@ -384,9 +399,9 @@ confetti --version
 # Expected: confetti 1.0.0
 ```
 
-### Set up Claude Code hook
+### Set up Claude Code hooks
 
-Add a Stop hook so confetti fires when the agent finishes a task. Edit or create `~/.claude/settings.json`:
+Add hooks to `~/.claude/settings.json`. Cannons on task completion, snow when waiting for input:
 
 ```json
 {
@@ -397,6 +412,16 @@ Add a Stop hook so confetti fires when the agent finishes a task. Edit or create
           {
             "type": "command",
             "command": "(~/.local/bin/confetti &) 2>/dev/null"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "(~/.local/bin/confetti -p snow &) 2>/dev/null"
           }
         ]
       }
