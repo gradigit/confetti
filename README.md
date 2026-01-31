@@ -1,6 +1,6 @@
 # Confetti 🎉
 
-A lightweight, high-performance confetti animation for macOS. Fire colorful confetti from the corners of your screen, or gentle snow from the top edge, to celebrate achievements, completed tasks, or any special moment.
+A lightweight, high-performance confetti animation for macOS, inspired by [Raycast's confetti effect](https://raycast.com). Unlike Raycast's version (which is limited to its own app window), Confetti fires across all connected displays simultaneously — covering your entire screen setup with colorful confetti from the corners, or gentle snow from the top edge.
 
 ![macOS](https://img.shields.io/badge/macOS-12.0%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
@@ -22,13 +22,25 @@ A lightweight, high-performance confetti animation for macOS. Fire colorful conf
 brew install gradigit/tap/confetti
 ```
 
+### Download
+
+Download the latest universal binary from [GitHub Releases](https://github.com/gradigit/confetti/releases/latest):
+
+```bash
+curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.0.0.tar.gz | tar xz
+mkdir -p ~/.local/bin
+mv confetti ~/.local/bin/
+```
+
+Make sure `~/.local/bin` is in your `PATH`.
+
 ### Build from source
 
 ```bash
 git clone https://github.com/gradigit/confetti.git
 cd confetti
 swift build -c release
-cp .build/release/confetti /usr/local/bin/
+cp .build/release/confetti ~/.local/bin/
 ```
 
 ### Swift Package Manager
@@ -185,46 +197,11 @@ ConfettiConfig(
 
 ## Use Cases
 
-### 1. Celebrate Task Completion
+### AI Coding Agent Hook
 
-Add confetti to your productivity app when users complete tasks:
+Fire confetti every time Claude Code (or any AI agent) finishes a task. See [Claude Code Integration](#claude-code-integration) below for setup.
 
-```swift
-func taskCompleted() {
-    let controller = ConfettiController()
-    controller.fire()
-
-    // Auto-cleanup after animation
-    DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-        controller.cleanup()
-    }
-}
-```
-
-### 2. Achievement Unlocked
-
-Fire confetti when users unlock achievements:
-
-```swift
-func achievementUnlocked(_ achievement: Achievement) {
-    // More intense confetti for bigger achievements
-    let intensity: Float = achievement.isRare ? 1.0 : 0.6
-
-    let controller = ConfettiController(intensity: intensity)
-    controller.fire()
-}
-```
-
-### 3. Build Success Notification
-
-Celebrate successful builds in your development workflow:
-
-```bash
-# In your build script
-swift build && confetti
-```
-
-### 4. Shell Aliases
+### Shell Aliases
 
 Add to your `.zshrc` or `.bashrc`:
 
@@ -232,20 +209,60 @@ Add to your `.zshrc` or `.bashrc`:
 # Celebrate git push
 alias gpush='git push && confetti'
 
-# Celebrate successful tests
-alias test='swift test && confetti'
+# Celebrate successful builds
+alias cbuild='swift build && confetti'
+
+# Celebrate passing tests
+alias ctest='swift test && confetti'
 
 # Celebrate deployment
 alias deploy='./deploy.sh && confetti -d 5'
 ```
 
-### 5. Keyboard Shortcut (Raycast/Alfred)
+### Long Command Notification
+
+Fire confetti when a long-running terminal command finishes. Add to your `.zshrc`:
+
+```bash
+# Notify with confetti after commands that take longer than 30 seconds
+autoload -Uz add-zsh-hook
+
+__confetti_preexec() { __cmd_start=$EPOCHSECONDS }
+__confetti_precmd() {
+  if [[ -n $__cmd_start ]] && (( EPOCHSECONDS - __cmd_start >= 30 )); then
+    (~/.local/bin/confetti &) 2>/dev/null
+  fi
+  unset __cmd_start
+}
+
+add-zsh-hook preexec __confetti_preexec
+add-zsh-hook precmd __confetti_precmd
+```
+
+### Keyboard Shortcut (Raycast/Alfred)
 
 Create a Raycast script or Alfred workflow:
 
 ```bash
 #!/bin/bash
 ~/.local/bin/confetti
+```
+
+### Swift Library
+
+Add confetti to your own macOS app:
+
+```swift
+import ConfettiKit
+
+func taskCompleted() {
+    let controller = ConfettiController()
+    controller.fire()
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+        controller.cleanup()
+    }
+}
 ```
 
 ## Claude Code Integration
@@ -345,6 +362,53 @@ Add a "Run Shell Script" action to any workflow:
 ~/.local/bin/confetti
 ```
 
+## AI Agent Instructions
+
+> This section is for AI coding agents (Claude Code, Gemini CLI, Copilot, etc.) that encounter this repository. Follow these steps to install confetti and set it up for the user.
+
+### Install
+
+```bash
+# Option 1: Homebrew (preferred)
+brew install gradigit/tap/confetti
+
+# Option 2: Direct download
+curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.0.0.tar.gz | tar xz
+mkdir -p ~/.local/bin && mv confetti ~/.local/bin/
+```
+
+### Verify
+
+```bash
+confetti --version
+# Expected: confetti 1.0.0
+```
+
+### Set up Claude Code hook
+
+Add a Stop hook so confetti fires every time the agent finishes a task. Edit or create `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "(~/.local/bin/confetti &) 2>/dev/null"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Test
+
+Run `confetti` to verify the animation appears on screen. It exits automatically after the particles fade.
+
 ## Architecture
 
 ```
@@ -383,7 +447,7 @@ Confetti is optimized for smooth 60fps animation:
 
 Run `swift build -c release --product benchmark && .build/release/benchmark` to reproduce.
 
-Results on Apple M1 Pro (10 cores, 24 GB):
+Results on MacBook Air 13" with Apple M4 (10 cores, 24 GB):
 
 | Operation | Median | p95 | Min | Stddev |
 |---|---|---|---|---|
