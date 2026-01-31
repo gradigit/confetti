@@ -90,29 +90,48 @@ public final class ConfettiController {
             guard let layer = window.contentView?.layer else { continue }
             let bounds = layer.bounds
 
-            // Left cannon
-            let left = ConfettiEmitter.createEmitter(
-                at: CGPoint(x: 0, y: 0),
-                angle: angles.left,
-                in: bounds,
-                config: config,
-                intensity: intensity
-            )
-            left.beginTime = CACurrentMediaTime()
-            layer.addSublayer(left)
-            emitters.append(left)
+            switch config.emissionStyle {
+            case .cannons:
+                // Left cannon (bottom-left corner, firing up)
+                let left = ConfettiEmitter.createEmitter(
+                    at: CGPoint(x: 0, y: 0),
+                    angle: angles.left,
+                    in: bounds,
+                    config: config,
+                    intensity: intensity
+                )
+                left.beginTime = CACurrentMediaTime()
+                layer.addSublayer(left)
+                emitters.append(left)
 
-            // Right cannon
-            let right = ConfettiEmitter.createEmitter(
-                at: CGPoint(x: bounds.width, y: 0),
-                angle: angles.right,
-                in: bounds,
-                config: config,
-                intensity: intensity
-            )
-            right.beginTime = CACurrentMediaTime()
-            layer.addSublayer(right)
-            emitters.append(right)
+                // Right cannon (bottom-right corner, firing up)
+                let right = ConfettiEmitter.createEmitter(
+                    at: CGPoint(x: bounds.width, y: 0),
+                    angle: angles.right,
+                    in: bounds,
+                    config: config,
+                    intensity: intensity
+                )
+                right.beginTime = CACurrentMediaTime()
+                layer.addSublayer(right)
+                emitters.append(right)
+
+            case .curtain:
+                // Line emitter across top edge, particles fall down
+                let emitter = ConfettiEmitter.createEmitter(
+                    at: CGPoint(x: bounds.width / 2, y: bounds.height),
+                    angle: 0,  // along line's inward normal = downward
+                    in: bounds,
+                    config: config,
+                    intensity: intensity
+                )
+                emitter.emitterShape = .line
+                emitter.emitterSize = CGSize(width: bounds.width, height: 1)
+                emitter.emitterMode = .outline
+                emitter.beginTime = CACurrentMediaTime()
+                layer.addSublayer(emitter)
+                emitters.append(emitter)
+            }
         }
 
         // Stop emission after burst
@@ -125,6 +144,7 @@ public final class ConfettiController {
     }
 
     private func stopEmission() {
+        dispatchPrecondition(condition: .onQueue(.main))
         for emitter in emitters {
             emitter.birthRate = 0
         }

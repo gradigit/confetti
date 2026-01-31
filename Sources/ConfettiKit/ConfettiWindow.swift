@@ -2,11 +2,11 @@ import AppKit
 import QuartzCore
 
 /// A transparent, click-through window for displaying confetti
-public final class ConfettiWindow: NSWindow {
+final class ConfettiWindow: NSWindow {
 
     /// Creates a confetti window covering the specified screen
     /// - Parameter screen: The screen to cover with confetti
-    public convenience init(screen: NSScreen) {
+    convenience init(screen: NSScreen) {
         self.init(
             contentRect: screen.frame,
             styleMask: [.borderless],

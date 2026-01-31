@@ -5,6 +5,14 @@ public enum ConfettiShape: CaseIterable {
     case rectangle, triangle, circle
 }
 
+/// How particles are emitted
+public enum EmissionStyle {
+    /// Fire from bottom corners upward (default for confetti)
+    case cannons
+    /// Emit from top edge of screen, falling down (used for snow)
+    case curtain
+}
+
 /// Configuration for confetti emission
 public struct ConfettiConfig {
     public let birthRate: Float
@@ -21,6 +29,7 @@ public struct ConfettiConfig {
     public let alphaSpeed: Float
     public let colors: [NSColor]
     public let shapes: [ConfettiShape]
+    public let emissionStyle: EmissionStyle
 
     public static let `default` = ConfettiConfig()
 
@@ -39,7 +48,8 @@ public struct ConfettiConfig {
         alphaSpeed: Float = -0.15,
         colors: [NSColor] = [.systemRed, .systemGreen, .systemBlue, .systemYellow,
                              .systemOrange, .systemPurple, .systemPink, .cyan],
-        shapes: [ConfettiShape] = [.rectangle, .triangle, .circle]
+        shapes: [ConfettiShape] = [.rectangle, .triangle, .circle],
+        emissionStyle: EmissionStyle = .cannons
     ) {
         precondition(birthRate > 0, "birthRate must be positive")
         precondition(lifetime > 0, "lifetime must be positive")
@@ -60,6 +70,7 @@ public struct ConfettiConfig {
         self.alphaSpeed = alphaSpeed
         self.colors = colors
         self.shapes = shapes
+        self.emissionStyle = emissionStyle
     }
 
     // MARK: - Presets
@@ -96,20 +107,21 @@ public struct ConfettiConfig {
 
     /// Gentle falling snow effect
     public static let snow = ConfettiConfig(
-        birthRate: 25,
-        lifetime: 8.0,
-        velocity: 200,
-        velocityRange: 100,
-        emissionRange: .pi * 0.1,
-        gravity: -50,
-        spin: 2.0,
-        spinRange: 4.0,
-        scale: 0.4,
-        scaleRange: 0.2,
+        birthRate: 4,
+        lifetime: 7.0,
+        velocity: 15,
+        velocityRange: 15,
+        emissionRange: .pi * 2,
+        gravity: -55,
+        spin: 0.5,
+        spinRange: 1.0,
+        scale: 0.3,
+        scaleRange: 0.15,
         scaleSpeed: 0,
-        alphaSpeed: -0.08,
+        alphaSpeed: -0.12,
         colors: [.white, .init(white: 0.9, alpha: 1.0)],
-        shapes: [.circle]
+        shapes: [.circle],
+        emissionStyle: .curtain
     )
 
     /// Fast explosive burst with heavy gravity
@@ -128,18 +140,20 @@ public struct ConfettiConfig {
         alphaSpeed: -0.25
     )
 
+    /// All available presets by name
+    private static let presets: [(name: String, config: ConfettiConfig)] = [
+        ("default", .default),
+        ("subtle", .subtle),
+        ("intense", .intense),
+        ("snow", .snow),
+        ("fireworks", .fireworks),
+    ]
+
     /// Returns a preset by name, or nil if not found
     public static func preset(named name: String) -> ConfettiConfig? {
-        switch name.lowercased() {
-        case "default", "celebration": return .default
-        case "subtle": return .subtle
-        case "intense": return .intense
-        case "snow": return .snow
-        case "fireworks": return .fireworks
-        default: return nil
-        }
+        presets.first { $0.name == name.lowercased() }?.config
     }
 
     /// All available preset names
-    public static let presetNames = ["default", "subtle", "intense", "snow", "fireworks"]
+    public static let presetNames: [String] = presets.map(\.name)
 }

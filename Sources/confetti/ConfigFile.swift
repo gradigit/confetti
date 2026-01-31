@@ -18,6 +18,7 @@ struct ConfigFileData: Codable {
     var scaleRange: Double?
     var scaleSpeed: Double?
     var alphaSpeed: Float?
+    var emissionStyle: String?
     var preset: String?
 }
 
@@ -47,6 +48,12 @@ enum ConfigFile {
 
     /// Saves a ConfettiConfig to a JSON file
     static func save(_ config: ConfettiConfig, to path: String = defaultPath) {
+        let styleString: String?
+        switch config.emissionStyle {
+        case .cannons: styleString = nil  // omit default
+        case .curtain: styleString = "curtain"
+        }
+
         let data = ConfigFileData(
             birthRate: config.birthRate,
             lifetime: config.lifetime,
@@ -59,7 +66,8 @@ enum ConfigFile {
             scale: Double(config.scale),
             scaleRange: Double(config.scaleRange),
             scaleSpeed: Double(config.scaleSpeed),
-            alphaSpeed: config.alphaSpeed
+            alphaSpeed: config.alphaSpeed,
+            emissionStyle: styleString
         )
 
         let encoder = JSONEncoder()
@@ -81,6 +89,13 @@ enum ConfigFile {
 
     /// Applies partial config file data over a base ConfettiConfig
     static func apply(_ fileData: ConfigFileData, over base: ConfettiConfig) -> ConfettiConfig {
+        let style: EmissionStyle
+        switch fileData.emissionStyle?.lowercased() {
+        case "curtain": style = .curtain
+        case "cannons": style = .cannons
+        default: style = base.emissionStyle
+        }
+
         return ConfettiConfig(
             birthRate: fileData.birthRate ?? base.birthRate,
             lifetime: fileData.lifetime ?? base.lifetime,
@@ -95,7 +110,8 @@ enum ConfigFile {
             scaleSpeed: fileData.scaleSpeed.map { CGFloat($0) } ?? base.scaleSpeed,
             alphaSpeed: fileData.alphaSpeed ?? base.alphaSpeed,
             colors: base.colors,
-            shapes: base.shapes
+            shapes: base.shapes,
+            emissionStyle: style
         )
     }
 }

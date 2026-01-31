@@ -224,7 +224,8 @@ func resolveConfig(cli: CLIConfig) -> ConfettiConfig {
             scaleSpeed: config.scaleSpeed,
             alphaSpeed: config.alphaSpeed,
             colors: config.colors,
-            shapes: config.shapes
+            shapes: config.shapes,
+            emissionStyle: config.emissionStyle
         )
     }
 
@@ -270,12 +271,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             screens = NSScreen.screens
         }
 
-        guard !screens.isEmpty else {
-            NSApp.terminate(nil)
-            return
+        let emissionDuration: Double
+        switch config.emissionStyle {
+        case .cannons:
+            emissionDuration = 0.15
+        case .curtain:
+            emissionDuration = 5.0
         }
-
-        let emissionDuration = 0.15
 
         controller = ConfettiController(
             config: config,

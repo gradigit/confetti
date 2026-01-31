@@ -5,7 +5,7 @@ public enum ConfettiEmitter {
 
     // MARK: - Cached Textures
 
-    private static var cachedImages: [ConfettiShape: CGImage] = {
+    private static let cachedImages: [ConfettiShape: CGImage] = {
         var cache: [ConfettiShape: CGImage] = [:]
         for shape in ConfettiShape.allCases {
             if let image = createImage(for: shape) {
