@@ -6,7 +6,7 @@ Confetti animation for macOS. A small dopamine hit for your development workflow
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-<video src="https://github.com/gradigit/confetti/raw/main/assets/ConfettiPromo.mp4" width="100%"></video>
+https://github.com/gradigit/confetti/raw/main/assets/ConfettiPromo.mp4
 
 ## Features
 
