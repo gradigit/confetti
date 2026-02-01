@@ -7,7 +7,7 @@ swift build                              # Debug build
 swift build -c release                   # Release build
 swift test                               # Run tests (requires Xcode)
 .build/release/confetti                  # Run confetti
-.build/release/benchmark        # Run benchmarks (requires display)
+.build/release/benchmark                 # Run benchmarks (requires display)
 cp .build/release/confetti ~/.local/bin/ # Install locally
 ```
 
@@ -22,6 +22,20 @@ cp .build/release/confetti ~/.local/bin/ # Install locally
 | `Sources/confetti/main.swift` | CLI entry point with arg parsing |
 | `Sources/confetti/ConfigFile.swift` | JSON config file loading/saving |
 | `Sources/benchmark/main.swift` | Performance benchmark suite |
+
+## Distribution
+
+- **Homebrew tap**: `gradigit/homebrew-tap` with formula at `Formula/confetti.rb`
+- **GitHub Release**: v1.0.0 with universal binary (arm64 + x86_64) tarball
+- **Release workflow**: `.github/workflows/release.yml` triggers on `v*` tags, builds universal binary, publishes release
+- Install command: `brew install gradigit/tap/confetti`
+
+## Promo Video
+
+- Source: `my-video/` (Remotion project, not committed to repo)
+- Final render: `assets/ConfettiPromo.mp4` (committed)
+- Embedded in README via GitHub user-attachments URL
+- **Important**: The video shows `$ brew install gradigit/tap/confetti` in the closing scene and preset names/descriptions throughout. If the install command, tap name, preset names, or any visible text in the video changes, the video must be re-rendered and re-uploaded, or removed from the README. The video source is in `my-video/` locally.
 
 ## Architecture
 
