@@ -123,7 +123,11 @@ struct CLIConfig {
                 print("Available presets:")
                 for name in ConfettiConfig.presetNames {
                     let c = ConfettiConfig.preset(named: name)!
-                    print("  \(name.padding(toLength: 12, withPad: " ", startingAt: 0)) birth-rate=\(c.birthRate) velocity=\(c.velocity) gravity=\(c.gravity) spin=\(c.spin) scale=\(c.scale)")
+                    if c.emissionStyle == .blizzard {
+                        print("  \(name.padding(toLength: 12, withPad: " ", startingAt: 0)) interactive snow with pile accumulation (SpriteKit)")
+                    } else {
+                        print("  \(name.padding(toLength: 12, withPad: " ", startingAt: 0)) birth-rate=\(c.birthRate) velocity=\(c.velocity) gravity=\(c.gravity) spin=\(c.spin) scale=\(c.scale)")
+                    }
                 }
                 exit(0)
             case "-h", "--help":
@@ -176,6 +180,7 @@ struct CLIConfig {
         Examples:
           confetti                        Fire confetti on all screens
           confetti -p intense             Use intense preset
+          confetti -p blizzard            Interactive snow with accumulation
           confetti --velocity 2000        Custom velocity
           confetti -p subtle --spin 20    Preset with override
           confetti --save-config          Save defaults to config file
@@ -277,6 +282,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             emissionDuration = 0.15
         case .curtain:
             emissionDuration = 5.0
+        case .blizzard:
+            emissionDuration = 0  // Blizzard runs via SpriteKit, not CAEmitterLayer
         }
 
         controller = ConfettiController(
@@ -287,12 +294,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         controller?.fire(on: screens)
 
-        // Exit after specified duration, or wait for all particles to finish
-        let autoDuration = emissionDuration + Double(config.lifetime)
-        let exitDuration = cliConfig.duration ?? autoDuration
-        DispatchQueue.main.asyncAfter(deadline: .now() + exitDuration) { [weak self] in
-            self?.controller?.cleanup()
-            NSApp.terminate(nil)
+        // Blizzard: auto-exits when pile is full or user sweeps enough snow.
+        // Also respects --duration as a hard timeout.
+        if config.emissionStyle == .blizzard {
+            controller?.onBlizzardComplete = { [weak self] in
+                self?.controller?.cleanup()
+                NSApp.terminate(nil)
+            }
+            if let duration = cliConfig.duration {
+                DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+                    self?.controller?.cleanup()
+                    NSApp.terminate(nil)
+                }
+            }
+        } else {
+            // Exit after specified duration, or wait for all particles to finish
+            let autoDuration = emissionDuration + Double(config.lifetime)
+            let exitDuration = cliConfig.duration ?? autoDuration
+            DispatchQueue.main.asyncAfter(deadline: .now() + exitDuration) { [weak self] in
+                self?.controller?.cleanup()
+                NSApp.terminate(nil)
+            }
         }
     }
 }

@@ -11,6 +11,8 @@ public enum EmissionStyle {
     case cannons
     /// Emit from top edge of screen, falling down (used for snow)
     case curtain
+    /// Interactive SpriteKit snow with pile accumulation and mouse interaction
+    case blizzard
 }
 
 /// Configuration for confetti emission
@@ -140,6 +142,26 @@ public struct ConfettiConfig {
         alphaSpeed: -0.25
     )
 
+    /// Interactive snow with pile accumulation and mouse interaction (SpriteKit).
+    /// Physics values below are placeholders — blizzard uses SpriteKit with its own hardcoded physics.
+    public static let blizzard = ConfettiConfig(
+        birthRate: 5,
+        lifetime: 10.0,
+        velocity: 15,
+        velocityRange: 10,
+        emissionRange: .pi * 2,
+        gravity: -55,
+        spin: 0.5,
+        spinRange: 1.0,
+        scale: 0.3,
+        scaleRange: 0.15,
+        scaleSpeed: 0,
+        alphaSpeed: 0,
+        colors: [.white, .init(white: 0.9, alpha: 1.0)],
+        shapes: [.circle],
+        emissionStyle: .blizzard
+    )
+
     /// All available presets by name
     private static let presets: [(name: String, config: ConfettiConfig)] = [
         ("default", .default),
@@ -147,6 +169,7 @@ public struct ConfettiConfig {
         ("intense", .intense),
         ("snow", .snow),
         ("fireworks", .fireworks),
+        ("blizzard", .blizzard),
     ]
 
     /// Returns a preset by name, or nil if not found

@@ -19,6 +19,9 @@ cp .build/release/confetti ~/.local/bin/ # Install locally
 | `Sources/ConfettiKit/ConfettiEmitter.swift` | Core emitter + texture caching |
 | `Sources/ConfettiKit/ConfettiController.swift` | Orchestrates multi-screen confetti display |
 | `Sources/ConfettiKit/ConfettiWindow.swift` | Transparent click-through overlay window (internal) |
+| `Sources/ConfettiKit/BlizzardScene.swift` | SpriteKit snow scene with pile accumulation, wind, mouse interaction |
+| `Sources/ConfettiKit/BlizzardWindow.swift` | Transparent overlay window hosting the SpriteKit blizzard scene |
+| `Sources/ConfettiKit/HeightMap.swift` | Snow pile height data, deposit/sweep logic, path generation |
 | `Sources/confetti/main.swift` | CLI entry point with arg parsing |
 | `Sources/confetti/ConfigFile.swift` | JSON config file loading/saving |
 | `Sources/benchmark/main.swift` | Performance benchmark suite |
@@ -43,9 +46,11 @@ cp .build/release/confetti ~/.local/bin/ # Install locally
 - **confetti** executable: CLI with presets, physics flags, and config file support
 - **benchmark** executable: Performance measurement (needs display context)
 - Particle system uses `CAEmitterLayer` + `CAEmitterCell` (hardware-accelerated)
-- Two emission styles: `.cannons` (corner cannons for confetti) and `.curtain` (top-edge line emitter for snow)
+- Three emission styles: `.cannons` (corner cannons for confetti), `.curtain` (top-edge line emitter for snow), `.blizzard` (SpriteKit interactive snow)
+- Blizzard preset uses SpriteKit (`BlizzardScene` + `BlizzardWindow`) — a completely separate rendering path from CAEmitterLayer
 - Textures are cached statically on first access (`static let` for thread-safe lazy init)
 - Windows use `CATransaction.flush()` to ensure visibility before emitting
+- Blizzard windows use `.floating` level; confetti windows use `.statusBar` level
 
 ## Code Style
 
@@ -61,14 +66,15 @@ Standalone Swift packages in `Prototypes/` for experimental features:
 | Prototype | Approach | Key Feature |
 |-----------|----------|-------------|
 | `InteractiveConfetti/` | SpriteKit + ConfettiKit | Mouse-following repulsion field pushes confetti |
-| `SnowAccumulation/` | SpriteKit (no ConfettiKit) | Physics-based snow landing + pile accumulation + mouse sweep |
+| `InteractiveConfettiSK/` | Pure SpriteKit | Standalone SpriteKit confetti with physics, accumulation, mouse repulsion |
+| `SnowAccumulation/` | SpriteKit (no ConfettiKit) | Physics-based snow landing + pile accumulation + mouse sweep + confetti mode |
 | `SnowAccumulationCA/` | Pure Core Animation (no SpriteKit) | CAEmitterLayer snow + CAShapeLayer pile, time-based growth |
 
-**SnowAccumulation** (SpriteKit): Individual `SKSpriteNode` snowflakes with `SKPhysicsBody` — enables per-particle landing detection, pile growth where snow actually falls, mouse cursor repulsion field + pile sweeping. Uses `SKFieldNode.noiseField` for organic wind drift.
+**SnowAccumulation** (SpriteKit): Individual `SKSpriteNode` snowflakes with `SKPhysicsBody` — enables per-particle landing detection, pile growth where snow actually falls, mouse cursor repulsion field + pile sweeping. Uses `SKFieldNode.noiseField` for organic wind drift. Supports `--mode confetti` for SpriteKit confetti (WIP, needs manual physics tuning). Window level `.floating` so active windows appear above the overlay.
 
 **SnowAccumulationCA** (Core Animation): `CAEmitterLayer` for GPU-managed snow particles, `CAGradientLayer` + `CAShapeLayer` mask for pile. Time-based pile growth with 8-second delay matching snow fall time. Adjusts particle lifetime as pile rises. Near-zero CPU cost but no per-particle interactivity.
 
-Build/run: `cd Prototypes/<name> && swift build && swift run`
+Build/run: `cd Prototypes/<name> && swift build && swift run` (or `swift build && .build/debug/<name> --mode confetti` for mode flags)
 
 ## architect/ Directory
 
@@ -79,6 +85,15 @@ Pre-planning artifacts for the snow accumulation feature. The prototypes in `Pro
 - `plan.md` — the execution plan (implemented via prototypes)
 - `STATE.md` — planning skill state. Ignore.
 
+## Architecture Decisions
+
+- **Keep CAEmitterLayer for confetti**: The existing confetti presets (default, subtle, intense, fireworks) are perfectly tuned on CAEmitterLayer and don't need per-particle interaction. Don't port them to SpriteKit.
+- **SpriteKit only for interactive snow** (`blizzard` preset): Uses SpriteKit for snow accumulation, pile sweep, and mouse repulsion. Heavier than CAEmitterLayer snow but provides interactivity.
+- **Separate preset, not hidden toggle**: Users explicitly opt into the heavier SpriteKit snow via `confetti -p blizzard`, keeping the lightweight `snow` preset as-is on CAEmitterLayer.
+- **Window level `.floating`** for blizzard overlays so active app windows appear above the effect. Confetti presets keep `.statusBar` for brief bursts.
+- **Blizzard end conditions**: Pile fills to 25% screen height (auto-stop), user sweeps 5% screen area of snow (auto-stop), or programmatic `stopSnowing()` call. All trigger graceful wind-down: stop spawning → remaining flakes settle → pile fades out → `onBlizzardComplete` callback.
+- **Blizzard physics tuning**: Gravity -0.25 (not -0.13 from prototype) and linearDamping 0.15 (not 0.3) give ~4s fall time. Spawn rate 8.3/sec (interval 0.12s). Original prototype values were too floaty for visible accumulation in reasonable time.
+
 ## Known Issues
 
 - Benchmark executable crashes without display context (exit code 139)
@@ -88,3 +103,5 @@ Pre-planning artifacts for the snow accumulation feature. The prototypes in `Pro
 - Swift range expressions with negative bounds (e.g., `-50...-30`) cause ambiguous operator errors — add spaces: `-50 ... -30`
 - `CAEmitterLayer` cell properties can't be modified directly after setup — use `setValue(_:forKeyPath: "emitterCells.<name>.<property>")` on the emitter layer
 - HeightMap range calculations with off-screen coordinates can produce inverted ranges (`start > end`) — always guard before `start...end`
+- SpriteKit physics values (gravity, velocity) are NOT the same scale as CAEmitterLayer — CA values like velocity=1500 and yAcceleration=-750 are way too extreme for SpriteKit and make particles invisible (off-screen in a single frame). SpriteKit confetti needs manual tuning; values around velocity=350, gravity=-5 are a starting point
+- macOS GUI apps (NSApplication) can't create windows from background shell processes — must be run from a foreground terminal

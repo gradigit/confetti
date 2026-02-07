@@ -52,6 +52,7 @@ enum ConfigFile {
         switch config.emissionStyle {
         case .cannons: styleString = nil  // omit default
         case .curtain: styleString = "curtain"
+        case .blizzard: styleString = "blizzard"
         }
 
         let data = ConfigFileData(
@@ -93,6 +94,7 @@ enum ConfigFile {
         switch fileData.emissionStyle?.lowercased() {
         case "curtain": style = .curtain
         case "cannons": style = .cannons
+        case "blizzard": style = .blizzard
         default: style = base.emissionStyle
         }
 

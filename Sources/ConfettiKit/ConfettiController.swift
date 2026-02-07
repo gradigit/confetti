@@ -1,4 +1,5 @@
 import AppKit
+import SpriteKit
 
 /// Controls confetti display across screens
 public final class ConfettiController {
@@ -20,14 +21,21 @@ public final class ConfettiController {
     }
 
     private var windows: [ConfettiWindow] = []
+    private var blizzardWindows: [BlizzardWindow] = []
     private var emitters: [CAEmitterLayer] = []
     private var hasFired = false
     private var stopWorkItem: DispatchWorkItem?
+
+    private var blizzardCompletedCount = 0
 
     public let config: ConfettiConfig
     public let angles: CannonAngles
     public let emissionDuration: TimeInterval
     public let intensity: Float
+
+    /// Called when all blizzard scenes have finished their fade-out animation.
+    /// Only relevant for `.blizzard` emission style.
+    public var onBlizzardComplete: (() -> Void)?
 
     /// Creates a confetti controller
     /// - Parameters:
@@ -57,6 +65,19 @@ public final class ConfettiController {
         let targetScreens = screens ?? NSScreen.screens
         guard !targetScreens.isEmpty else { return }
 
+        // Blizzard uses SpriteKit — separate code path
+        if config.emissionStyle == .blizzard {
+            for screen in targetScreens {
+                let window = BlizzardWindow(screen: screen)
+                window.orderFrontRegardless()
+                blizzardWindows.append(window)
+                window.blizzardScene.onComplete = { [weak self] in
+                    self?.handleBlizzardSceneComplete()
+                }
+            }
+            return
+        }
+
         // Create windows
         for screen in targetScreens {
             let window = ConfettiWindow(screen: screen)
@@ -74,6 +95,15 @@ public final class ConfettiController {
         addEmitters()
     }
 
+    /// Stops the blizzard gracefully. New snowflakes stop spawning, existing flakes
+    /// settle, the pile fades out, then `onBlizzardComplete` is called.
+    public func stopSnowing() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        for window in blizzardWindows {
+            window.blizzardScene.stopSnowing()
+        }
+    }
+
     /// Estimated particle count per screen based on current configuration
     /// - Parameter emitterCount: Number of emitters per screen (default: 2 for left/right cannons)
     public func estimatedParticleCount(emitterCount: Int = 2) -> Int {
@@ -83,6 +113,14 @@ public final class ConfettiController {
             emitterCount: emitterCount,
             intensity: intensity
         )
+    }
+
+    private func handleBlizzardSceneComplete() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        blizzardCompletedCount += 1
+        if blizzardCompletedCount >= blizzardWindows.count {
+            onBlizzardComplete?()
+        }
     }
 
     private func addEmitters() {
@@ -131,6 +169,9 @@ public final class ConfettiController {
                 emitter.beginTime = CACurrentMediaTime()
                 layer.addSublayer(emitter)
                 emitters.append(emitter)
+
+            case .blizzard:
+                break  // Blizzard uses SpriteKit, never reaches here
             }
         }
 
@@ -161,8 +202,13 @@ public final class ConfettiController {
         for window in windows {
             window.orderOut(nil)
         }
+        for window in blizzardWindows {
+            window.orderOut(nil)
+        }
         windows.removeAll()
+        blizzardWindows.removeAll()
         emitters.removeAll()
+        blizzardCompletedCount = 0
         hasFired = false
     }
 }
