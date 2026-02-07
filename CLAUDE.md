@@ -54,8 +54,37 @@ cp .build/release/confetti ~/.local/bin/ # Install locally
 - MARK comments for section organization
 - Public API has doc comments
 
+## Prototypes
+
+Standalone Swift packages in `Prototypes/` for experimental features:
+
+| Prototype | Approach | Key Feature |
+|-----------|----------|-------------|
+| `InteractiveConfetti/` | SpriteKit + ConfettiKit | Mouse-following repulsion field pushes confetti |
+| `SnowAccumulation/` | SpriteKit (no ConfettiKit) | Physics-based snow landing + pile accumulation + mouse sweep |
+| `SnowAccumulationCA/` | Pure Core Animation (no SpriteKit) | CAEmitterLayer snow + CAShapeLayer pile, time-based growth |
+
+**SnowAccumulation** (SpriteKit): Individual `SKSpriteNode` snowflakes with `SKPhysicsBody` — enables per-particle landing detection, pile growth where snow actually falls, mouse cursor repulsion field + pile sweeping. Uses `SKFieldNode.noiseField` for organic wind drift.
+
+**SnowAccumulationCA** (Core Animation): `CAEmitterLayer` for GPU-managed snow particles, `CAGradientLayer` + `CAShapeLayer` mask for pile. Time-based pile growth with 8-second delay matching snow fall time. Adjusts particle lifetime as pile rises. Near-zero CPU cost but no per-particle interactivity.
+
+Build/run: `cd Prototypes/<name> && swift build && swift run`
+
+## architect/ Directory
+
+Pre-planning artifacts for the snow accumulation feature. The prototypes in `Prototypes/SnowAccumulation*` are the implemented result.
+
+- `prompt.md` — the original specification
+- `transcript.md` — Q&A log from the planning process
+- `plan.md` — the execution plan (implemented via prototypes)
+- `STATE.md` — planning skill state. Ignore.
+
 ## Known Issues
 
 - Benchmark executable crashes without display context (exit code 139)
 - XCTest requires full Xcode, not just Command Line Tools
 - `cachedImages` static init uses `NSImage(size:flipped:)` block-based drawing which needs graphics context
+- `SKView.preferredFramesPerSecond = 0` can tank performance on ProMotion displays (transparent overlay at 120Hz kills window server compositing). Use explicit 60 instead.
+- Swift range expressions with negative bounds (e.g., `-50...-30`) cause ambiguous operator errors — add spaces: `-50 ... -30`
+- `CAEmitterLayer` cell properties can't be modified directly after setup — use `setValue(_:forKeyPath: "emitterCells.<name>.<property>")` on the emitter layer
+- HeightMap range calculations with off-screen coordinates can produce inverted ranges (`start > end`) — always guard before `start...end`
