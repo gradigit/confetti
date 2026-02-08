@@ -12,7 +12,8 @@ https://github.com/user-attachments/assets/ab8bb451-376f-4753-b5f8-29f6e2e51c18
 
 **New in 1.2.0** -- the blizzard preset. Snow piles up, you sweep it away. Runs as a singleton when triggered by Claude Code hooks, so multiple sessions layer different colors of snow instead of fighting over the screen.
 
-[▶ Watch the blizzard demo](https://github.com/gradigit/confetti/raw/main/assets/BlizzardPreview.mp4)
+https://github.com/user-attachments/assets/1d1fd0de-23fb-4131-ac8a-2002fd468e43
+
 
 ## Features
 
@@ -772,3 +773,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 - Inspired by [Raycast's confetti](https://raycast.com)
 - Built with Core Animation's `CAEmitterLayer` and SpriteKit
 - [NSHipster's CAEmitterLayer writeup](https://nshipster.com/caemitterlayer/) was a useful reference
+
