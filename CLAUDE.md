@@ -93,6 +93,7 @@ Pre-planning artifacts for the snow accumulation feature. The prototypes in `Pro
 - **Window level `.statusBar`** for blizzard overlays so snow appears on top of everything except system notifications.
 - **Blizzard end conditions**: Any column hits 25% screen height (auto-stop), user sweeps 8% of max pile area (auto-stop, scales with screen size), or programmatic `stopSnowing()` call. All trigger melt animation: pile heights decay + alpha fades over 2s, airborne flakes fade simultaneously → `onBlizzardComplete` callback.
 - **Blizzard physics tuning**: Gravity -0.25 (not -0.13 from prototype) and linearDamping 0.15 (not 0.3) give ~4s fall time. Spawn rate 8.3/sec (interval 0.12s). Original prototype values were too floaty for visible accumulation in reasonable time.
+- **Blizzard ignores physics CLI flags**: `--gravity`, `--velocity`, `--birth-rate`, `--lifetime`, `--spin`, `--scale`, `--intensity` are all ignored for blizzard (SpriteKit uses hardcoded physics). A warning is printed to stderr if the user passes them.
 
 ## Known Issues
 
@@ -105,3 +106,4 @@ Pre-planning artifacts for the snow accumulation feature. The prototypes in `Pro
 - HeightMap range calculations with off-screen coordinates can produce inverted ranges (`start > end`) — always guard before `start...end`
 - SpriteKit physics values (gravity, velocity) are NOT the same scale as CAEmitterLayer — CA values like velocity=1500 and yAcceleration=-750 are way too extreme for SpriteKit and make particles invisible (off-screen in a single frame). SpriteKit confetti needs manual tuning; values around velocity=350, gravity=-5 are a starting point
 - macOS GUI apps (NSApplication) can't create windows from background shell processes — must be run from a foreground terminal
+- The installed binary at `~/.local/bin/confetti` is separate from the debug build at `.build/debug/confetti` — after code changes, run `swift build -c release && cp .build/release/confetti ~/.local/bin/` to update the installed copy
