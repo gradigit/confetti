@@ -428,14 +428,45 @@ Create `~/.claude/hooks/blizzard-hook.sh`:
 
 ```bash
 #!/bin/bash
+# Blizzard hook for Claude Code PermissionRequest events.
+# Uses launchd to launch confetti outside the hook's process tree —
+# Claude Code's sandbox kills direct child processes when the hook exits.
 TRANSCRIPT_PATH=$(jq -r '.transcript_path // empty')
 printf '\a'
 afplay /System/Library/Sounds/Funk.aiff &
+
+PLIST_LABEL="com.confetti.blizzard"
+PLIST_PATH="/tmp/${PLIST_LABEL}.plist"
+
+launchctl remove "$PLIST_LABEL" 2>/dev/null
+
+CONFETTI="$HOME/.local/bin/confetti"
 if [ -n "$TRANSCRIPT_PATH" ]; then
-    ~/.local/bin/confetti -p blizzard --stop-on-modify "$TRANSCRIPT_PATH" &
+    ARGS="<string>$CONFETTI</string><string>-p</string><string>blizzard</string><string>--stop-on-modify</string><string>$TRANSCRIPT_PATH</string>"
 else
-    ~/.local/bin/confetti -p blizzard -d 30 &
+    ARGS="<string>$CONFETTI</string><string>-p</string><string>blizzard</string><string>-d</string><string>30</string>"
 fi
+
+cat > "$PLIST_PATH" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${PLIST_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        ${ARGS}
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>
+EOF
+
+launchctl load "$PLIST_PATH"
 ```
 
 ```bash
