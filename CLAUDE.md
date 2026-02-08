@@ -29,7 +29,7 @@ cp .build/release/confetti ~/.local/bin/ # Install locally
 ## Distribution
 
 - **Homebrew tap**: `gradigit/homebrew-tap` with formula at `Formula/confetti.rb`
-- **GitHub Release**: v1.0.0 with universal binary (arm64 + x86_64) tarball
+- **GitHub Release**: v1.1.0 with universal binary (arm64 + x86_64) tarball
 - **Release workflow**: `.github/workflows/release.yml` triggers on `v*` tags, builds universal binary, publishes release
 - Install command: `brew install gradigit/tap/confetti`
 
@@ -50,7 +50,7 @@ cp .build/release/confetti ~/.local/bin/ # Install locally
 - Blizzard preset uses SpriteKit (`BlizzardScene` + `BlizzardWindow`) — a completely separate rendering path from CAEmitterLayer
 - Textures are cached statically on first access (`static let` for thread-safe lazy init)
 - Windows use `CATransaction.flush()` to ensure visibility before emitting
-- Blizzard windows use `.floating` level; confetti windows use `.statusBar` level
+- Blizzard windows use `.statusBar` level; confetti windows also use `.statusBar` level
 
 ## Code Style
 
@@ -90,8 +90,8 @@ Pre-planning artifacts for the snow accumulation feature. The prototypes in `Pro
 - **Keep CAEmitterLayer for confetti**: The existing confetti presets (default, subtle, intense, fireworks) are perfectly tuned on CAEmitterLayer and don't need per-particle interaction. Don't port them to SpriteKit.
 - **SpriteKit only for interactive snow** (`blizzard` preset): Uses SpriteKit for snow accumulation, pile sweep, and mouse repulsion. Heavier than CAEmitterLayer snow but provides interactivity.
 - **Separate preset, not hidden toggle**: Users explicitly opt into the heavier SpriteKit snow via `confetti -p blizzard`, keeping the lightweight `snow` preset as-is on CAEmitterLayer.
-- **Window level `.floating`** for blizzard overlays so active app windows appear above the effect. Confetti presets keep `.statusBar` for brief bursts.
-- **Blizzard end conditions**: Pile fills to 25% screen height (auto-stop), user sweeps 5% screen area of snow (auto-stop), or programmatic `stopSnowing()` call. All trigger graceful wind-down: stop spawning → remaining flakes settle → pile fades out → `onBlizzardComplete` callback.
+- **Window level `.statusBar`** for blizzard overlays so snow appears on top of everything except system notifications.
+- **Blizzard end conditions**: Any column hits 25% screen height (auto-stop), user sweeps 8% of max pile area (auto-stop, scales with screen size), or programmatic `stopSnowing()` call. All trigger melt animation: pile heights decay + alpha fades over 2s, airborne flakes fade simultaneously → `onBlizzardComplete` callback.
 - **Blizzard physics tuning**: Gravity -0.25 (not -0.13 from prototype) and linearDamping 0.15 (not 0.3) give ~4s fall time. Spawn rate 8.3/sec (interval 0.12s). Original prototype values were too floaty for visible accumulation in reasonable time.
 
 ## Known Issues

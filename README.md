@@ -1,6 +1,8 @@
 # Confetti 🎉
 
-Confetti animation for macOS. A small dopamine hit for your development workflow. Fires from the corners of every connected display at once, or drops gentle snow from the top edge. Inspired by [Raycast's confetti](https://raycast.com), but that one only fires on a single display, requires Raycast to be installed, and is closed source. This is standalone, multi-monitor, and MIT licensed.
+Confetti cannon for macOS. Fires from the corners of every connected display at once, drops snow from the top edge, or buries your screen in an interactive blizzard where snow piles up and you sweep it away with your mouse.
+
+Inspired by [Raycast's confetti](https://raycast.com), which only fires on one display, needs Raycast installed, and is closed source. This is standalone, multi-monitor, and MIT licensed.
 
 ![macOS](https://img.shields.io/badge/macOS-12.0%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
@@ -10,11 +12,12 @@ https://github.com/user-attachments/assets/ab8bb451-376f-4753-b5f8-29f6e2e51c18
 
 ## Features
 
-- Hardware-accelerated via Core Animation
-- Works across all connected displays
-- Configurable colors, shapes, and physics
-- Usable as a Swift package or standalone CLI
-- No dependencies
+- Multi-monitor: fires on every connected display at once
+- Blizzard mode: snow piles up at the bottom, you can sweep it away with your cursor
+- GPU-rendered via Core Animation (blizzard uses SpriteKit for physics)
+- Colors, shapes, and physics are all configurable
+- Works as a Swift package or standalone CLI
+- Zero dependencies
 
 ## Installation
 
@@ -29,7 +32,7 @@ brew install gradigit/tap/confetti
 Grab the universal binary from [GitHub Releases](https://github.com/gradigit/confetti/releases/latest):
 
 ```bash
-curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.0.0.tar.gz | tar xz
+curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.1.0.tar.gz | tar xz
 mkdir -p ~/.local/bin
 mv confetti ~/.local/bin/
 ```
@@ -51,7 +54,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/gradigit/confetti.git", from: "1.0.0")
+    .package(url: "https://github.com/gradigit/confetti.git", from: "1.1.0")
 ]
 ```
 
@@ -65,6 +68,9 @@ confetti
 
 # Use a preset
 confetti -p intense
+
+# Interactive blizzard — snow piles up, sweep it away with your mouse
+confetti -p blizzard
 
 # Custom physics
 confetti --velocity 2000 --gravity -500
@@ -108,11 +114,12 @@ confetti --help
 
 | Preset | Description |
 |--------|-------------|
-| `default` | Balanced celebration confetti |
-| `subtle` | Gentle, understated — fewer particles, slower |
-| `intense` | High-energy — more particles, faster, bigger |
-| `snow` | Gentle falling snow from the top edge |
-| `fireworks` | Fast explosive burst with heavy gravity |
+| `default` | Confetti cannons from both corners |
+| `subtle` | Fewer particles, slower, understated |
+| `intense` | More particles, faster, bigger |
+| `snow` | Falling snow from the top edge |
+| `blizzard` | Snow that piles up, sweep it away with your mouse |
+| `fireworks` | Fast burst, heavy gravity |
 
 ```bash
 # List presets with their values
@@ -145,7 +152,7 @@ The config file is JSON with all fields optional:
 }
 ```
 
-**Priority:** defaults < config file < preset < CLI flags
+Priority: defaults < config file < preset < CLI flags
 
 ### Swift library
 
@@ -173,6 +180,17 @@ controller.fire(on: [NSScreen.main!])
 
 // Cleanup when done
 controller.cleanup()
+
+// Interactive blizzard with programmatic stop
+let blizzardConfig = ConfettiConfig.preset(named: "blizzard")!
+let blizzardController = ConfettiController(config: blizzardConfig)
+blizzardController.onBlizzardComplete = {
+    blizzardController.cleanup()
+}
+blizzardController.fire()
+
+// Stop the blizzard early (triggers melt animation, then onBlizzardComplete)
+blizzardController.stopSnowing()
 ```
 
 ### Configuration options
@@ -193,7 +211,7 @@ ConfettiConfig(
     alphaSpeed: -0.15,    // Fade out speed
     colors: [...],        // Array of NSColor
     shapes: [...],        // Array of ConfettiShape
-    emissionStyle: .cannons // .cannons (corners) or .curtain (top edge)
+    emissionStyle: .cannons // .cannons (corners), .curtain (top edge), or .blizzard (interactive snow)
 )
 ```
 
@@ -201,7 +219,7 @@ ConfettiConfig(
 
 ### AI coding agent hook
 
-Fire confetti every time Claude Code (or any AI agent) finishes a task. See [Claude Code integration](#claude-code-integration) below.
+Confetti every time Claude Code (or any AI agent) finishes a task. See [Claude Code integration](#claude-code-integration) below.
 
 ### Shell function
 
@@ -226,7 +244,7 @@ alias deploy='./deploy.sh && confetti -d 5'
 
 ### Long command notification
 
-Fire confetti when a long-running terminal command finishes. Add to `.zshrc`:
+Confetti when a long-running terminal command finishes. Add to `.zshrc`:
 
 ```bash
 # Notify with confetti after commands that take longer than 30 seconds
@@ -353,7 +371,7 @@ Create a Shortcut with the "Run Shell Script" action:
 ~/.local/bin/confetti
 ```
 
-Use any CLI flags in the script — presets, physics overrides, duration:
+Any CLI flags work in the script:
 
 ```bash
 ~/.local/bin/confetti -p intense -d 3
@@ -390,7 +408,7 @@ Add a "Run Shell Script" action to any workflow:
 brew install gradigit/tap/confetti
 
 # Option 2: Direct download
-curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.0.0.tar.gz | tar xz
+curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.1.0.tar.gz | tar xz
 mkdir -p ~/.local/bin && mv confetti ~/.local/bin/
 ```
 
@@ -398,7 +416,7 @@ mkdir -p ~/.local/bin && mv confetti ~/.local/bin/
 
 ```bash
 confetti --version
-# Expected: confetti 1.0.0
+# Expected: confetti 1.1.0
 ```
 
 ### Set up Claude Code hooks
@@ -434,36 +452,30 @@ Add hooks to `~/.claude/settings.json`. Cannons on task completion, snow when wa
 
 ### Test
 
-Run `confetti` to verify the animation appears on screen. It exits automatically after the particles fade.
+Run `confetti` to check it works. It exits on its own after the particles fade.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    ConfettiController                    │
-│  - Manages windows and emitters across screens          │
-│  - Coordinates emission timing                          │
-└─────────────────────────┬───────────────────────────────┘
-                          │
-          ┌───────────────┴───────────────┐
-          │                               │
-┌─────────▼─────────┐         ┌──────────▼──────────┐
-│  ConfettiWindow   │         │  ConfettiEmitter    │
-│  - Transparent    │         │  - Creates layers   │
-│  - Click-through  │         │  - Caches textures  │
-│  - Multi-monitor  │         │  - Configures cells │
-└───────────────────┘         └─────────────────────┘
-                                        │
-                              ┌─────────▼─────────┐
-                              │   CAEmitterLayer   │
-                              │   CAEmitterCell    │
-                              │  (Core Animation)  │
-                              └───────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                    ConfettiController                     │
+│  - Manages windows and emitters across screens           │
+│  - Routes to CA or SpriteKit based on emission style     │
+└────────────────┬─────────────────────┬───────────────────┘
+                 │                     │
+    ┌────────────▼────────────┐  ┌─────▼──────────────┐
+    │  Confetti Path (CA)     │  │  Blizzard Path (SK) │
+    │                         │  │                     │
+    │  ConfettiWindow         │  │  BlizzardWindow     │
+    │  ConfettiEmitter        │  │  BlizzardScene      │
+    │  CAEmitterLayer         │  │  HeightMap          │
+    │                         │  │  SKView + physics   │
+    └─────────────────────────┘  └─────────────────────┘
 ```
 
 ## Performance
 
-Rendering is handled entirely by Core Animation on the GPU. The CPU side is just setup.
+Most presets use Core Animation, so the CPU just does setup and the GPU handles rendering. Blizzard is the exception: it uses SpriteKit for per-particle physics and pile interaction. Heavier, but still 60 FPS.
 
 - Particle textures are created once at startup (1,048 bytes total)
 - Emitter layers use `drawsAsynchronously` and `renderMode = .oldestFirst`
@@ -495,7 +507,7 @@ MacBook Air 13" with Apple M4 (10 cores, 24 GB):
 | Min FPS (worst run) | 30.0 |
 | Dropped frames | 1 / 944 (0.1%) |
 
-The first fire() call takes ~83 ms because it creates transparent windows and flushes the initial `CATransaction`. After that, ~2.5 ms. One dropped frame out of 944, during window creation on the first run. Runs 2-5 had zero drops at 60 FPS.
+First fire() call takes ~83 ms (window creation + initial `CATransaction` flush). After that, ~2.5 ms. One dropped frame out of 944, during window creation on the first run. Runs 2-5 had zero drops at 60 FPS.
 
 ### Preset overview
 
@@ -505,6 +517,7 @@ The first fire() call takes ~83 ms because it creates transparent windows and fl
 | subtle | 24 | 2 | 108 | 3.5s | cannons |
 | intense | 24 | 2 | 576 | 5.0s | cannons |
 | snow | 2 | 1 | 1 | 7.0s | curtain |
+| blizzard | - | - | ~8/sec | until done | blizzard (SpriteKit) |
 | fireworks | 24 | 2 | 720 | 3.0s | cannons |
 
 *Particles = birthRate x cells x emitters x 0.15s emission duration.*
@@ -552,7 +565,10 @@ confetti/
 │   │   ├── ConfettiConfig.swift
 │   │   ├── ConfettiEmitter.swift
 │   │   ├── ConfettiWindow.swift
-│   │   └── ConfettiController.swift
+│   │   ├── ConfettiController.swift
+│   │   ├── BlizzardScene.swift
+│   │   ├── BlizzardWindow.swift
+│   │   └── HeightMap.swift
 │   ├── confetti/         # CLI executable
 │   │   ├── main.swift
 │   │   └── ConfigFile.swift
@@ -581,5 +597,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Acknowledgments
 
 - Inspired by [Raycast's confetti](https://raycast.com)
-- Built with Core Animation's `CAEmitterLayer`
+- Built with Core Animation's `CAEmitterLayer` and SpriteKit
 - [NSHipster's CAEmitterLayer writeup](https://nshipster.com/caemitterlayer/) was a useful reference
