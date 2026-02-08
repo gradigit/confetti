@@ -32,7 +32,7 @@ struct HeightMap {
     }
 
     var isCapped: Bool {
-        averageHeight >= maxHeight * 0.99
+        heights.contains { $0 >= maxHeight }
     }
 
     // MARK: - Snow Deposit
@@ -78,6 +78,22 @@ struct HeightMap {
                 totalSweptArea += removed * columnWidth
             }
         }
+    }
+
+    // MARK: - Melt
+
+    /// Decay all heights by a factor (0..1). Returns true when fully melted.
+    mutating func melt(factor: CGFloat) -> Bool {
+        var allMelted = true
+        for i in 0..<heights.count {
+            heights[i] *= factor
+            if heights[i] < 0.5 {
+                heights[i] = 0
+            } else {
+                allMelted = false
+            }
+        }
+        return allMelted
     }
 
     // MARK: - Smoothing

@@ -303,8 +303,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if let duration = cliConfig.duration {
                 DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
-                    self?.controller?.cleanup()
-                    NSApp.terminate(nil)
+                    self?.controller?.stopSnowing()
                 }
             }
         } else {

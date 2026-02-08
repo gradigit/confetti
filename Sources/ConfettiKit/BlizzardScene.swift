@@ -70,8 +70,13 @@ class BlizzardScene: SKScene {
     /// Whether the scene is winding down (fading out pile after all flakes settled)
     private var isWindingDown = false
 
-    /// Sweep area threshold: 5% of total screen area
+    /// Sweep area threshold: 8% of max pile area (scales with screen size)
     private var sweepThreshold: CGFloat = 0
+    private var sweepRadius: CGFloat = 60
+    private var sweepRate: CGFloat = 200
+
+    private var meltAccumulator: TimeInterval = 0
+    private let meltDuration: TimeInterval = 2.0
 
     // MARK: - Init
 
@@ -85,11 +90,11 @@ class BlizzardScene: SKScene {
 
     // MARK: - Public API
 
-    /// Stops spawning new snowflakes. Existing flakes continue falling and landing.
-    /// Once all flakes have settled, the pile fades out and `onComplete` is called.
+    /// Stops the blizzard immediately. Snowflakes and pile fade out together.
     func stopSnowing() {
-        guard isSpawning else { return }
+        guard !isWindingDown else { return }
         isSpawning = false
+        beginFadeOut()
     }
 
     // MARK: - Scene Lifecycle
@@ -102,7 +107,9 @@ class BlizzardScene: SKScene {
         physicsWorld.gravity = CGVector(dx: 0.01, dy: -0.25)
 
         heightMap = HeightMap(screenWidth: size.width, screenHeight: size.height)
-        sweepThreshold = 0.05 * size.width * size.height
+        sweepThreshold = 0.08 * size.width * heightMap.maxHeight
+        sweepRadius = 0.04 * size.width
+        sweepRate = 0.15 * size.height
 
         setupRepulsionField()
         setupWindField()
@@ -125,8 +132,25 @@ class BlizzardScene: SKScene {
         }
         lastUpdateTime = currentTime
 
-        // No updates once winding down — pile is fading via SKAction
-        guard !isWindingDown else { return }
+        // Melt phase: shrink pile heights + fade alpha, then complete
+        if isWindingDown {
+            meltAccumulator += deltaTime
+            let progress = min(meltAccumulator / meltDuration, 1.0)
+            // Decay heights ~3% per frame for visible shrinking
+            let melted = heightMap.melt(factor: 0.97)
+            pileNode.path = heightMap.buildPath()
+            glowNode.path = heightMap.buildSurfacePath()
+            // Fade alpha alongside the melt
+            let alpha = CGFloat(1.0 - progress)
+            pileNode.alpha = alpha
+            glowNode.alpha = alpha
+            if melted || progress >= 1.0 {
+                DispatchQueue.main.async { [weak self] in
+                    self?.onComplete?()
+                }
+            }
+            return
+        }
 
         updateMouseInteraction(deltaTime: deltaTime)
 
@@ -165,14 +189,9 @@ class BlizzardScene: SKScene {
             stopSnowing()
         }
 
-        // Auto-stop: user swept enough snow away (only after pile has grown a bit)
-        if isSpawning && heightMap.averageHeight > 10 && heightMap.totalSweptArea >= sweepThreshold {
+        // Auto-stop: user swept enough snow away
+        if isSpawning && heightMap.totalSweptArea >= sweepThreshold {
             stopSnowing()
-        }
-
-        // Wind-down: all flakes have settled, start fade-out
-        if !isSpawning && !isWindingDown && activeSnowflakes.isEmpty {
-            beginFadeOut()
         }
 
         // Update pile visuals
@@ -192,13 +211,15 @@ class BlizzardScene: SKScene {
 
     private func beginFadeOut() {
         isWindingDown = true
+        meltAccumulator = 0
+        // Fade out any remaining airborne flakes
         let fadeOut = SKAction.fadeOut(withDuration: 1.5)
-        pileNode.run(fadeOut)
-        glowNode.run(fadeOut) { [weak self] in
-            DispatchQueue.main.async {
-                self?.onComplete?()
+        for flake in activeSnowflakes {
+            flake.run(fadeOut) {
+                flake.removeFromParent()
             }
         }
+        activeSnowflakes.removeAll()
     }
 
     // MARK: - Snowflake Spawning
@@ -273,7 +294,7 @@ class BlizzardScene: SKScene {
         if isSpawning {
             let surfaceY = heightMap.heightAt(x: mouseInScene.x)
             if mouseInScene.y < surfaceY + 30 && surfaceY > 2 {
-                heightMap.sweepSnow(atX: mouseInScene.x, radius: 60, amount: CGFloat(deltaTime) * 200)
+                heightMap.sweepSnow(atX: mouseInScene.x, radius: sweepRadius, amount: CGFloat(deltaTime) * sweepRate)
             }
         }
     }
