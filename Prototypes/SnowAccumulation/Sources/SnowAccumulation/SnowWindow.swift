@@ -7,10 +7,10 @@ final class SnowWindow: NSWindow {
     let skView: SKView
     let snowScene: SnowScene
 
-    init(screen: NSScreen) {
+    init(screen: NSScreen, mode: SceneMode = .snow) {
         let skView = SKView(frame: CGRect(origin: .zero, size: screen.frame.size))
         self.skView = skView
-        self.snowScene = SnowScene(size: screen.frame.size)
+        self.snowScene = SnowScene(size: screen.frame.size, mode: mode)
 
         super.init(
             contentRect: screen.frame,
@@ -23,7 +23,7 @@ final class SnowWindow: NSWindow {
         backgroundColor = .clear
         hasShadow = false
         ignoresMouseEvents = true
-        level = .statusBar
+        level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
         skView.allowsTransparency = true

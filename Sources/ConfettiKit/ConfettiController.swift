@@ -32,6 +32,7 @@ public final class ConfettiController {
     public let angles: CannonAngles
     public let emissionDuration: TimeInterval
     public let intensity: Float
+    public let windowLevel: WindowLevel
 
     /// Called when all blizzard scenes have finished their fade-out animation.
     /// Only relevant for `.blizzard` emission style.
@@ -43,16 +44,19 @@ public final class ConfettiController {
     ///   - angles: Angles for the left and right cannons
     ///   - emissionDuration: How long to emit particles
     ///   - intensity: Multiplier for particle birth rate
+    ///   - windowLevel: Window level for overlay windows
     public init(
         config: ConfettiConfig = .default,
         angles: CannonAngles = .default,
         emissionDuration: TimeInterval = 0.15,
-        intensity: Float = 1.0
+        intensity: Float = 1.0,
+        windowLevel: WindowLevel = .statusBar
     ) {
         self.config = config
         self.angles = angles
         self.emissionDuration = emissionDuration
         self.intensity = intensity
+        self.windowLevel = windowLevel
     }
 
     /// Fires confetti on specified screens
@@ -68,7 +72,7 @@ public final class ConfettiController {
         // Blizzard uses SpriteKit — separate code path
         if config.emissionStyle == .blizzard {
             for screen in targetScreens {
-                let window = BlizzardWindow(screen: screen)
+                let window = BlizzardWindow(screen: screen, windowLevel: windowLevel)
                 window.orderFrontRegardless()
                 blizzardWindows.append(window)
                 window.blizzardScene.onComplete = { [weak self] in
@@ -80,7 +84,7 @@ public final class ConfettiController {
 
         // Create windows
         for screen in targetScreens {
-            let window = ConfettiWindow(screen: screen)
+            let window = ConfettiWindow(screen: screen, windowLevel: windowLevel)
             window.orderFrontRegardless()
             windows.append(window)
         }
@@ -113,6 +117,23 @@ public final class ConfettiController {
             emitterCount: emitterCount,
             intensity: intensity
         )
+    }
+
+    /// Adds a new session layer to all blizzard scenes (multi-session escalation).
+    public func escalateBlizzard(sessionID: String) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        for window in blizzardWindows {
+            window.blizzardScene.addSessionLayer(sessionID: sessionID)
+        }
+    }
+
+    /// Removes a session layer from all blizzard scenes (de-escalation).
+    /// If no sessions remain, triggers stopSnowing → melt → onBlizzardComplete.
+    public func deescalateBlizzard(sessionID: String) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        for window in blizzardWindows {
+            window.blizzardScene.removeSessionLayer(sessionID: sessionID)
+        }
     }
 
     private func handleBlizzardSceneComplete() {

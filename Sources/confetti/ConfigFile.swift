@@ -19,6 +19,7 @@ struct ConfigFileData: Codable {
     var scaleSpeed: Double?
     var alphaSpeed: Float?
     var emissionStyle: String?
+    var windowLevel: String?
     var preset: String?
 }
 

@@ -8,6 +8,9 @@ struct HeightMap {
     let maxHeight: CGFloat
     var heights: [CGFloat]
 
+    /// Per-column color deposit tracking for multi-session blending
+    var colorDeposits: [ColorDeposit]
+
     /// Cumulative area swept away by the cursor (in square points)
     private(set) var totalSweptArea: CGFloat = 0
 
@@ -24,6 +27,7 @@ struct HeightMap {
 
         let columnCount = Int(ceil(screenWidth / 4.0))
         self.heights = [CGFloat](repeating: 0, count: columnCount)
+        self.colorDeposits = [ColorDeposit](repeating: ColorDeposit(), count: columnCount)
         self.splatColumns = Int(splatRadius / 4.0)
     }
 
@@ -39,6 +43,11 @@ struct HeightMap {
 
     /// Deposit snow at a landing position, spreading height via cosine falloff
     mutating func depositSnow(atX x: CGFloat) {
+        depositSnow(atX: x, session: nil)
+    }
+
+    /// Deposit snow at a landing position with session tracking for color blending.
+    mutating func depositSnow(atX x: CGFloat, session: Int?) {
         guard !isCapped else { return }
 
         let centerColumn = Int(x / columnWidth)
@@ -51,7 +60,11 @@ struct HeightMap {
             let distance = abs(CGFloat(i - centerColumn)) * columnWidth
             let factor = cos(distance / splatRadius * .pi / 2)
             if factor > 0 {
-                heights[i] = min(heights[i] + peakDeposit * factor, maxHeight)
+                let deposit = peakDeposit * factor
+                heights[i] = min(heights[i] + deposit, maxHeight)
+                if let s = session {
+                    colorDeposits[i].sessionHeights[s, default: 0] += deposit
+                }
             }
         }
     }
@@ -87,6 +100,7 @@ struct HeightMap {
         var allMelted = true
         for i in 0..<heights.count {
             heights[i] *= factor
+            colorDeposits[i].melt(factor: factor)
             if heights[i] < 0.5 {
                 heights[i] = 0
             } else {

@@ -1,46 +1,27 @@
-# Handoff — Snow Accumulation Prototypes
+# Context Handoff — 2026-02-09
+
+## First Steps
+1. Read CLAUDE.md
+2. Check git log for latest state
 
 ## What Was Done
 
-Built two snow accumulation prototypes comparing SpriteKit vs pure Core Animation approaches:
+Implemented multi-session escalating blizzard (v1.2.0). Six phases:
 
-### SnowAccumulation (SpriteKit)
-- Individual `SKSpriteNode` snowflakes with `SKPhysicsBody` for per-particle physics
-- Snow lands on pile surface — detected via y-position check against HeightMap each frame
-- Pile grows only where snow actually falls (cosine splat deposit, radius 100pt)
-- Mouse cursor repulsion field pushes falling snowflakes away
-- Mouse cursor sweeps pile (lowers HeightMap near cursor when near surface)
-- Landing puffs (pool of 3 `SKEmitterNode`) and sparkles (pool of 5 `SKSpriteNode`) trigger at exact landing points
-- Wind via `SKFieldNode.noiseField` for organic drift
-- Gradient pile fill via `SKShapeNode.fillTexture`, glow via separate stroke shape node
-- 60fps, ~70 nodes at steady state
+1. **WindowLevel enum** + `--window-level` CLI flag (normal/floating/statusBar)
+2. **TranscriptWatcher** — GCD file watcher with `--stop-on-modify` flag
+3. **Session layers** — 4 pastel presets (ice blue circles, lavender hexagons, mint stars, rose diamonds) with bitmask-isolated wind fields, blended pile colors, retroactive tinting
+4. **BlizzardCoordinator** — singleton via PID file + DNC IPC, per-session transcript watchers
+5. **Hook config** — blizzard-hook.sh wrapper script, settings.json updated
+6. **Polish** — README updated + humanized, blizzard preview video, CLAUDE.md synced
 
-### SnowAccumulationCA (Core Animation)
-- `CAEmitterLayer` for GPU-managed snow particles (zero CPU per-particle)
-- `CAGradientLayer` + `CAShapeLayer` mask for pile rendering
-- Time-based pile growth with 8-second delay matching fall time
-- Particle lifetime dynamically adjusted as pile rises
-- Surface mist emitter repositions as pile grows
-- 10Hz `DispatchSourceTimer` for pile updates
-- No mouse interaction (CAEmitterLayer particles are opaque GPU state)
+Critical bug found and fixed: `NSColor.white.getRed()` deadlocks during `skView.presentScene()`. Split texture creation into raw RGB and NSColor overloads, defer session creation until after `fire()` returns.
 
-## Current State
+17/17 automated tests passed. 12/12 visual manual tests passed.
 
-Both prototypes build and run. Key tuning applied:
-- Wind field: strength 0.15, animation speed 0.8, snowflake mass 0.05, damping 0.3 (gentle, not chaotic)
-- Pile fade-in: opacity = min(averageHeight / 8.0, 1.0) (visible after first few landings)
-- FPS diagnostics enabled on SpriteKit version (`showsFPS/showsNodeCount/showsDrawCount`)
-- HeightMap guards against inverted ranges from off-screen coordinates
+## Experimental / TODOs
 
-## Open Questions
-
-- User hasn't tested the CA prototype yet — needs visual comparison with SpriteKit version
-- Performance comparison (CPU/GPU in Activity Monitor) between the two approaches not yet measured
-- No decision yet on which approach to productionize (if either)
-- The SpriteKit version crashed at `preferredFramesPerSecond = 0` on ProMotion — fixed with explicit 60
-
-## First Steps
-
-1. Read CLAUDE.md for project context
-2. Run both prototypes: `cd Prototypes/SnowAccumulation && swift run` and `cd Prototypes/SnowAccumulationCA && swift run`
-3. Check TODO.md if it exists for any pending items
+- Blizzard tagged experimental in README
+- Multi-session demo video needed (current preview is single-session only)
+- Pastel colors may need brightness tuning on dark backgrounds
+- No automated visual regression tests yet

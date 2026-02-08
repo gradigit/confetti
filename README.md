@@ -1,6 +1,6 @@
 # Confetti 🎉
 
-Confetti cannon for macOS. Fires from the corners of every connected display at once, drops snow from the top edge, or buries your screen in an interactive blizzard where snow piles up and you sweep it away with your mouse.
+Confetti cannon for macOS. Fires from the corners of every connected display at once, drops snow from the top edge, or buries your screen in an interactive blizzard where snow piles up and you sweep it away with your mouse. Run multiple AI sessions and the blizzard escalates, adding a new color of snow for each one.
 
 Inspired by [Raycast's confetti](https://raycast.com), which only fires on one display, needs Raycast installed, and is closed source. This is standalone, multi-monitor, and MIT licensed.
 
@@ -9,6 +9,10 @@ Inspired by [Raycast's confetti](https://raycast.com), which only fires on one d
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 https://github.com/user-attachments/assets/ab8bb451-376f-4753-b5f8-29f6e2e51c18
+
+**New in 1.2.0** -- the blizzard preset. Snow piles up, you sweep it away. Runs as a singleton when triggered by Claude Code hooks, so multiple sessions layer different colors of snow instead of fighting over the screen.
+
+https://github.com/gradigit/confetti/raw/main/assets/BlizzardPreview.mp4
 
 ## Features
 
@@ -38,7 +42,7 @@ brew install gradigit/tap/confetti
 Grab the universal binary from [GitHub Releases](https://github.com/gradigit/confetti/releases/latest):
 
 ```bash
-curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.1.0.tar.gz | tar xz
+curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.2.0.tar.gz | tar xz
 mkdir -p ~/.local/bin
 mv confetti ~/.local/bin/
 ```
@@ -60,7 +64,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/gradigit/confetti.git", from: "1.1.0")
+    .package(url: "https://github.com/gradigit/confetti.git", from: "1.2.0")
 ]
 ```
 
@@ -102,6 +106,8 @@ confetti --help
 | `-i, --intensity` | Particle intensity (0.0-1.0) | 1.0 |
 | `-s, --screen` | Screen index (0 = primary) | all |
 | `-p, --preset` | Use a preset (see below) | default |
+| `--window-level` | Window level: `normal`, `floating`, `statusBar` | statusBar |
+| `--stop-on-modify` | Watch a file; stop when it changes | - |
 | `-v, --version` | Show version | - |
 | `-h, --help` | Show help | - |
 
@@ -132,11 +138,9 @@ confetti --help
 confetti --presets
 ```
 
-### Blizzard preset
+### Blizzard preset (experimental)
 
-Blizzard is a separate rendering path from the other presets. While the rest use Core Animation (`CAEmitterLayer`) for fire-and-forget GPU-managed particles, blizzard uses SpriteKit — a full physics engine with per-particle tracking, collision detection, and scene graph.
-
-This means:
+The other presets use Core Animation (`CAEmitterLayer`) for fire-and-forget GPU particles. Blizzard uses SpriteKit instead, which gives it per-particle physics, collision detection, and a scene graph. Heavier, but that's what makes the interactive stuff possible:
 
 - Snow accumulates into a pile at the bottom of the screen using a height map
 - You can sweep the pile away by moving your mouse cursor through it
@@ -153,6 +157,50 @@ confetti -p blizzard        # Runs until pile fills or you sweep it away
 confetti -p blizzard -d 20  # Hard timeout at 20 seconds, then melts
 ```
 
+#### Multi-session escalation
+
+Only one blizzard process runs at a time. If a second Claude Code session triggers a permission request while one is already snowing, it joins the existing blizzard instead of spawning another.
+
+Each session gets its own snow layer with a different color and shape:
+
+| Session | Color | Shape | Wind |
+|---------|-------|-------|------|
+| 1 | Ice blue | Circle | Vertical |
+| 2 | Lavender | Hexagon | Left drift |
+| 3 | Mint | Star | Right drift |
+| 4 | Rose | Diamond | Gusty |
+
+Colors cycle after 4. When you approve or deny a permission (the transcript file changes), that session's snow fades out. Last session gone = full melt, process exits.
+
+Coordination uses a PID file at `/tmp/confetti-blizzard.pid` and `DistributedNotificationCenter`. SIGTERM triggers a graceful melt, not an instant kill.
+
+```bash
+# First launch claims ownership, starts blizzard
+confetti -p blizzard --stop-on-modify /path/to/transcript.jsonl &
+
+# Second launch detects running blizzard, posts escalation, exits immediately
+confetti -p blizzard --stop-on-modify /path/to/other-transcript.jsonl
+```
+
+#### Window level
+
+By default blizzard renders above all windows. You can change this:
+
+```bash
+confetti -p blizzard --window-level normal    # Behind active windows
+confetti -p blizzard --window-level floating   # Above normal, below menus
+confetti -p blizzard --window-level statusBar  # Above everything (default)
+```
+
+#### Experimental status
+
+The core scenarios work (single session, multi-session escalation/de-escalation, SIGTERM, stale PID recovery, file watching). Still rough around the edges though.
+
+TODOs:
+- Multi-session demo video (the current promo video only shows single-session)
+- Pastel colors are subtle on dark backgrounds — may need brightness tuning
+- No automated visual tests (current tests check process lifecycle, not pixels)
+
 #### Swift API
 
 ```swift
@@ -168,6 +216,10 @@ controller.fire()
 
 // Optionally stop early — triggers melt, then onBlizzardComplete
 controller.stopSnowing()
+
+// Multi-session: add/remove visual layers
+controller.escalateBlizzard(sessionID: "session-1")
+controller.deescalateBlizzard(sessionID: "session-1")
 ```
 
 ### Config file
@@ -356,7 +408,7 @@ Use different presets for different events. Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "(~/.local/bin/confetti -p blizzard &) 2>/dev/null"
+            "command": "~/.claude/hooks/blizzard-hook.sh"
           }
         ]
       }
@@ -365,7 +417,31 @@ Use different presets for different events. Add to `~/.claude/settings.json`:
 }
 ```
 
-`Stop` fires the default cannons when Claude finishes a task. `PermissionRequest` drops an interactive blizzard while you review — snow piles up and you can sweep it away with your mouse.
+`Stop` fires the default cannons when Claude finishes a task. `PermissionRequest` starts a blizzard while you review. Snow piles up; sweep it with your mouse.
+
+#### Blizzard hook script
+
+The hook above calls a wrapper script. It pulls the transcript path from the hook JSON and passes it to `--stop-on-modify`, so the blizzard melts on its own when you approve or deny.
+
+Create `~/.claude/hooks/blizzard-hook.sh`:
+
+```bash
+#!/bin/bash
+TRANSCRIPT_PATH=$(jq -r '.transcript_path // empty')
+printf '\a'
+afplay /System/Library/Sounds/Funk.aiff &
+if [ -n "$TRANSCRIPT_PATH" ]; then
+    ~/.local/bin/confetti -p blizzard --stop-on-modify "$TRANSCRIPT_PATH" &
+else
+    ~/.local/bin/confetti -p blizzard -d 30 &
+fi
+```
+
+```bash
+chmod +x ~/.claude/hooks/blizzard-hook.sh
+```
+
+If you have multiple Claude Code sessions running, each permission request adds a new colored snow layer to the same blizzard instead of spawning a second process. See [multi-session escalation](#multi-session-escalation).
 
 ### Skill
 
@@ -452,11 +528,11 @@ Add a "Run Shell Script" action to any workflow:
 brew install gradigit/tap/confetti
 
 # Or direct download
-curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.1.0.tar.gz | tar xz
+curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.2.0.tar.gz | tar xz
 mkdir -p ~/.local/bin && mv confetti ~/.local/bin/
 ```
 
-Verify: `confetti --version` should print `confetti 1.1.0`.
+Verify: `confetti --version` should print `confetti 1.2.0`.
 
 ### Step 2: Setup wizard
 
@@ -543,25 +619,33 @@ Run `confetti` to verify installation. It exits on its own after the particles f
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                    ConfettiController                     │
-│  - Manages windows and emitters across screens           │
-│  - Routes to CA or SpriteKit based on emission style     │
-└────────────────┬─────────────────────┬───────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    ConfettiController                         │
+│  - Manages windows and emitters across screens               │
+│  - Routes to CA or SpriteKit based on emission style         │
+└────────────────┬─────────────────────┬───────────────────────┘
                  │                     │
-    ┌────────────▼────────────┐  ┌─────▼──────────────┐
-    │  Confetti Path (CA)     │  │  Blizzard Path (SK) │
-    │                         │  │                     │
-    │  ConfettiWindow         │  │  BlizzardWindow     │
-    │  ConfettiEmitter        │  │  BlizzardScene      │
-    │  CAEmitterLayer         │  │  HeightMap          │
-    │                         │  │  SKView + physics   │
-    └─────────────────────────┘  └─────────────────────┘
+    ┌────────────▼────────────┐  ┌─────▼───────────────────┐
+    │  Confetti Path (CA)     │  │  Blizzard Path (SK)      │
+    │                         │  │                          │
+    │  ConfettiWindow         │  │  BlizzardWindow          │
+    │  ConfettiEmitter        │  │  BlizzardScene           │
+    │  CAEmitterLayer         │  │  BlizzardSessionLayer(s) │
+    │                         │  │  HeightMap               │
+    └─────────────────────────┘  │  SKView + physics        │
+                                 └──────────┬───────────────┘
+                                            │
+                              ┌─────────────▼──────────────┐
+                              │  BlizzardCoordinator (CLI)  │
+                              │  - PID file singleton       │
+                              │  - DNC escalation IPC       │
+                              │  - TranscriptWatcher(s)     │
+                              └─────────────────────────────┘
 ```
 
 ## Performance
 
-Most presets use Core Animation, so the CPU just does setup and the GPU handles rendering. Blizzard is the exception: it uses SpriteKit for per-particle physics and pile interaction. Heavier, but still 60 FPS.
+Most presets use Core Animation: CPU does setup, GPU handles rendering. Blizzard is the exception since it needs SpriteKit for per-particle physics and pile interaction. Heavier, but still 60 FPS.
 
 - Particle textures are created once at startup (1,048 bytes total)
 - Emitter layers use `drawsAsynchronously` and `renderMode = .oldestFirst`
@@ -654,10 +738,13 @@ confetti/
 │   │   ├── ConfettiController.swift
 │   │   ├── BlizzardScene.swift
 │   │   ├── BlizzardWindow.swift
+│   │   ├── BlizzardSessionStyle.swift
 │   │   └── HeightMap.swift
 │   ├── confetti/         # CLI executable
 │   │   ├── main.swift
-│   │   └── ConfigFile.swift
+│   │   ├── ConfigFile.swift
+│   │   ├── BlizzardCoordinator.swift
+│   │   └── TranscriptWatcher.swift
 │   └── benchmark/        # Performance benchmarks
 │       └── main.swift
 └── Tests/

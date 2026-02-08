@@ -5,23 +5,25 @@ import QuartzCore
 final class ConfettiWindow: NSWindow {
 
     /// Creates a confetti window covering the specified screen
-    /// - Parameter screen: The screen to cover with confetti
-    convenience init(screen: NSScreen) {
+    /// - Parameters:
+    ///   - screen: The screen to cover with confetti
+    ///   - windowLevel: Window level for the overlay
+    convenience init(screen: NSScreen, windowLevel: WindowLevel = .statusBar) {
         self.init(
             contentRect: screen.frame,
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
-        configureWindow(for: screen)
+        configureWindow(for: screen, windowLevel: windowLevel)
     }
 
-    private func configureWindow(for screen: NSScreen) {
+    private func configureWindow(for screen: NSScreen, windowLevel: WindowLevel = .statusBar) {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
         ignoresMouseEvents = true
-        level = .statusBar
+        level = windowLevel.nsWindowLevel
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
         let bounds = CGRect(origin: .zero, size: screen.frame.size)

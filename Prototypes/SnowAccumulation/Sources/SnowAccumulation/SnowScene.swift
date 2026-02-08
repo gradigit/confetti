@@ -1,8 +1,15 @@
 import SpriteKit
 
-/// SpriteKit scene with physics-based falling snow that accumulates into a pile.
-/// Individual snowflakes are tracked sprites with physics bodies — when they reach
-/// the pile surface, they deposit height, trigger a puff, and occasionally sparkle.
+// MARK: - Scene Mode
+
+enum SceneMode {
+    case snow
+    case confetti
+}
+
+/// SpriteKit scene with physics-based falling particles.
+/// Snow mode: gentle flakes from top, pile accumulation, mouse sweep.
+/// Confetti mode: cannon bursts from bottom corners, identical to CAEmitterLayer version.
 class SnowScene: SKScene {
 
     // MARK: - Textures
@@ -11,6 +18,29 @@ class SnowScene: SKScene {
         let image = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in
             NSColor.white.setFill()
             NSBezierPath(ovalIn: rect).fill()
+            return true
+        }
+        return SKTexture(cgImage: image.cgImage(forProposedRect: nil, context: nil, hints: nil)!)
+    }()
+
+    private static let rectangleTexture: SKTexture = {
+        let image = NSImage(size: NSSize(width: 14, height: 7), flipped: false) { rect in
+            NSColor.white.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 1, yRadius: 1).fill()
+            return true
+        }
+        return SKTexture(cgImage: image.cgImage(forProposedRect: nil, context: nil, hints: nil)!)
+    }()
+
+    private static let triangleTexture: SKTexture = {
+        let image = NSImage(size: NSSize(width: 10, height: 10), flipped: false) { _ in
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: 5, y: 10))
+            path.line(to: NSPoint(x: 0, y: 0))
+            path.line(to: NSPoint(x: 10, y: 0))
+            path.close()
+            NSColor.white.setFill()
+            path.fill()
             return true
         }
         return SKTexture(cgImage: image.cgImage(forProposedRect: nil, context: nil, hints: nil)!)
@@ -40,27 +70,52 @@ class SnowScene: SKScene {
         return SKTexture(cgImage: image.cgImage(forProposedRect: nil, context: nil, hints: nil)!)
     }()
 
+    private static let confettiTextures: [SKTexture] = [circleTexture, rectangleTexture, triangleTexture]
+
+    private static let confettiColors: [NSColor] = [
+        .systemRed, .systemGreen, .systemBlue, .systemYellow,
+        .systemOrange, .systemPurple, .systemPink, .cyan
+    ]
+
     // MARK: - State
 
+    let mode: SceneMode
+
+    // Snow-specific state
     private var heightMap: HeightMap!
     private var pileNode: SKShapeNode!
     private var glowNode: SKShapeNode!
-
-    private var activeSnowflakes: [SKSpriteNode] = []
     private var puffEmitters: [SKEmitterNode] = []
     private var sparkleNodes: [SKSpriteNode] = []
-    private var repulsionField: SKFieldNode!
+    private var currentPuffIndex: Int = 0
+    private var currentSparkleIndex: Int = 0
+    private var landingCount: Int = 0
 
+    // Shared state
+    private var activeSnowflakes: [SKSpriteNode] = []
+    private var repulsionField: SKFieldNode!
     private var lastUpdateTime: TimeInterval = 0
     private var pathUpdateAccumulator: TimeInterval = 0
     private let pathUpdateInterval: TimeInterval = 0.1 // 10 Hz
 
     private var spawnAccumulator: TimeInterval = 0
-    private let spawnInterval: TimeInterval = 0.2 // 5 snowflakes/sec
+    private var spawnInterval: TimeInterval = 0.2
 
-    private var currentPuffIndex: Int = 0
-    private var currentSparkleIndex: Int = 0
-    private var landingCount: Int = 0
+    // Confetti burst state
+    // Original: 24 cells × 40 birthRate × 0.15s = 144 particles per cannon, 288 total
+    private var confettiBurstRemaining: Int = 0
+
+    // MARK: - Init
+
+    init(size: CGSize, mode: SceneMode = .snow) {
+        self.mode = mode
+        super.init(size: size)
+    }
+
+    required init?(coder aDecoder: NSCoder) {
+        self.mode = .snow
+        super.init(coder: aDecoder)
+    }
 
     // MARK: - Scene Lifecycle
 
@@ -68,22 +123,33 @@ class SnowScene: SKScene {
         anchorPoint = .zero
         backgroundColor = .clear
 
-        // Gentle gravity: ~20 pt/s² downward, very subtle wind bias
-        physicsWorld.gravity = CGVector(dx: 0.01, dy: -0.13)
-
-        heightMap = HeightMap(screenWidth: size.width, screenHeight: size.height)
-
-        setupWindField()
         setupRepulsionField()
-        setupPile()
-        setupGlow()
 
-        // Start invisible — fade in as snow accumulates
-        pileNode.alpha = 0
-        glowNode.alpha = 0
+        switch mode {
+        case .snow:
+            // Gentle gravity for floating snowflakes
+            physicsWorld.gravity = CGVector(dx: 0.01, dy: -0.13)
+            spawnInterval = 0.2
 
-        setupPuffEmitters()
-        setupSparkles()
+            heightMap = HeightMap(screenWidth: size.width, screenHeight: size.height)
+            setupWindField()
+            setupPile()
+            setupGlow()
+            pileNode.alpha = 0
+            glowNode.alpha = 0
+            setupPuffEmitters()
+            setupSparkles()
+
+        case .confetti:
+            // SpriteKit gravity scale: snow uses -0.13 vs CA's -55, ratio ~423x
+            // CA confetti gravity = -750 → SK ≈ -1.8, but tuned up for snappier feel
+            physicsWorld.gravity = CGVector(dx: 0, dy: -5.0)
+            // 144 spawns per side over 0.15 seconds
+            confettiBurstRemaining = 288
+            spawnInterval = 0.15 / 144.0
+            // Stronger repulsion for fast-moving confetti
+            repulsionField.strength = -8.0
+        }
     }
 
     // MARK: - Frame Update
@@ -97,55 +163,56 @@ class SnowScene: SKScene {
         }
         lastUpdateTime = currentTime
 
-        // Track mouse cursor — repel snowflakes and sweep the pile
         updateMouseInteraction(deltaTime: deltaTime)
 
-        // Spawn snowflakes on a timer
+        // Spawn particles on a timer
         spawnAccumulator += deltaTime
         while spawnAccumulator >= spawnInterval {
-            spawnSnowflake()
+            switch mode {
+            case .snow:
+                spawnSnowflake()
+            case .confetti:
+                if confettiBurstRemaining > 0 {
+                    spawnConfettiPiece(fromLeft: true)
+                    spawnConfettiPiece(fromLeft: false)
+                    confettiBurstRemaining -= 2
+                }
+            }
             spawnAccumulator -= spawnInterval
         }
 
-        // Check for landings (iterate backwards for safe removal)
-        for i in stride(from: activeSnowflakes.count - 1, through: 0, by: -1) {
-            let flake = activeSnowflakes[i]
-            let surfaceY = heightMap.heightAt(x: flake.position.x)
+        // Snow-specific: check for landings and update pile
+        if mode == .snow {
+            for i in stride(from: activeSnowflakes.count - 1, through: 0, by: -1) {
+                let flake = activeSnowflakes[i]
+                let surfaceY = heightMap.heightAt(x: flake.position.x)
 
-            if flake.position.y <= surfaceY {
-                // Landed on the pile
-                let landingPoint = CGPoint(x: flake.position.x, y: surfaceY)
-                heightMap.depositSnow(atX: flake.position.x)
-
-                triggerPuff(at: landingPoint)
-
-                landingCount += 1
-                if landingCount % 3 == 0 {
-                    triggerSparkle(at: landingPoint)
+                if flake.position.y <= surfaceY {
+                    let landingPoint = CGPoint(x: flake.position.x, y: surfaceY)
+                    heightMap.depositSnow(atX: flake.position.x)
+                    triggerPuff(at: landingPoint)
+                    landingCount += 1
+                    if landingCount % 3 == 0 {
+                        triggerSparkle(at: landingPoint)
+                    }
+                    flake.removeFromParent()
+                    activeSnowflakes.remove(at: i)
+                } else if flake.position.x < -100 || flake.position.x > size.width + 100 {
+                    flake.removeFromParent()
+                    activeSnowflakes.remove(at: i)
                 }
-
-                flake.removeFromParent()
-                activeSnowflakes.remove(at: i)
-            } else if flake.position.x < -100 || flake.position.x > size.width + 100 {
-                // Drifted off screen horizontally — clean up
-                flake.removeFromParent()
-                activeSnowflakes.remove(at: i)
             }
-        }
 
-        // Throttled path rebuild + smoothing at ~10 Hz
-        pathUpdateAccumulator += deltaTime
-        if pathUpdateAccumulator >= pathUpdateInterval {
-            heightMap.smooth()
-            pileNode.path = heightMap.buildPath()
-            glowNode.path = heightMap.buildSurfacePath()
-
-            // Gradually fade in pile and glow as snow accumulates
-            let fadeAlpha = min(heightMap.averageHeight / 8.0, 1.0)
-            pileNode.alpha = CGFloat(fadeAlpha)
-            glowNode.alpha = CGFloat(fadeAlpha)
-
-            pathUpdateAccumulator = 0
+            pathUpdateAccumulator += deltaTime
+            if pathUpdateAccumulator >= pathUpdateInterval {
+                heightMap.smooth()
+                pileNode.path = heightMap.buildPath()
+                glowNode.path = heightMap.buildSurfacePath()
+                let fadeAlpha = min(heightMap.averageHeight / 8.0, 1.0)
+                pileNode.alpha = CGFloat(fadeAlpha)
+                glowNode.alpha = CGFloat(fadeAlpha)
+                pathUpdateAccumulator = 0
+            }
         }
     }
 
@@ -172,7 +239,6 @@ class SnowScene: SKScene {
         body.contactTestBitMask = 0
         flake.physicsBody = body
 
-        // Gentle initial downward velocity with slight lateral variation
         body.velocity = CGVector(
             dx: CGFloat.random(in: -5...5),
             dy: CGFloat.random(in: -45 ... -25)
@@ -180,6 +246,76 @@ class SnowScene: SKScene {
 
         addChild(flake)
         activeSnowflakes.append(flake)
+    }
+
+    // MARK: - Confetti Spawning
+
+    /// Spawns a single confetti piece matching the original CAEmitterLayer behavior.
+    /// Cannon angles: left = π*0.47 (~85°), right = π*0.53 (~95°)
+    /// Velocity: 1500 ± 450, emission cone: ±π*0.4
+    /// Particles self-remove after 4.5s lifetime via SKAction.
+    private func spawnConfettiPiece(fromLeft: Bool) {
+        let texture = SnowScene.confettiTextures.randomElement()!
+        let color = SnowScene.confettiColors.randomElement()!
+
+        let piece = SKSpriteNode(texture: texture)
+        // scale: 0.8 ± 0.2 → range 0.6...1.0
+        let initialScale = CGFloat.random(in: 0.6...1.0)
+        piece.setScale(initialScale)
+        piece.color = color
+        piece.colorBlendFactor = 1.0
+        piece.alpha = 1.0
+        piece.zPosition = 5
+
+        // Cannons fire from bottom corners, matching ConfettiController
+        piece.position = CGPoint(x: fromLeft ? 0 : size.width, y: 0)
+
+        let body = SKPhysicsBody(circleOfRadius: 3)
+        body.mass = 0.01
+        body.linearDamping = 0      // pure ballistic, no air drag
+        body.angularDamping = 0     // spin doesn't decay
+        body.affectedByGravity = true
+        body.allowsRotation = true
+        body.fieldBitMask = 0x1
+        body.collisionBitMask = 0
+        body.contactTestBitMask = 0
+        piece.physicsBody = body
+
+        // Emission angle: base ± emissionRange (π*0.4)
+        let baseAngle: CGFloat = fromLeft ? .pi * 0.47 : .pi * 0.53
+        let emissionRange: CGFloat = .pi * 0.4
+        let angle = baseAngle + CGFloat.random(in: -emissionRange...emissionRange)
+        // CA velocity 1500 / ~423 scale factor ≈ 3.5, tuned up for visual match
+        let speed: CGFloat = 350.0 + CGFloat.random(in: -100...100)
+
+        body.velocity = CGVector(
+            dx: speed * cos(angle),
+            dy: speed * sin(angle)
+        )
+
+        // Spin: scaled down from CA values
+        body.angularVelocity = CGFloat.random(in: -2...8)
+
+        // Lifetime behavior matching CAEmitterLayer:
+        // alphaSpeed: -0.15/s → 1.0 to ~0.325 over 4.5s
+        // scaleSpeed: -0.1/s → initial to (initial - 0.45) over 4.5s
+        let lifetime: TimeInterval = 4.5
+        let finalAlpha: CGFloat = 0.325
+        let finalScale = max(initialScale - 0.45, 0.05)
+
+        piece.run(SKAction.sequence([
+            SKAction.group([
+                SKAction.fadeAlpha(to: finalAlpha, duration: lifetime),
+                SKAction.scale(to: finalScale, duration: lifetime),
+            ]),
+            SKAction.removeFromParent(),
+        ]))
+
+        addChild(piece)
+        // Not tracked in activeSnowflakes — confetti self-removes via SKAction
+        if confettiBurstRemaining % 50 == 0 {
+            print("Confetti spawned: pos=\(piece.position) vel=\(body.velocity) remaining=\(confettiBurstRemaining) children=\(children.count)")
+        }
     }
 
     // MARK: - Wind Field
@@ -203,7 +339,6 @@ class SnowScene: SKScene {
         field.minimumRadius = 10
         field.isEnabled = true
         field.categoryBitMask = 0x1
-        // Start offscreen until mouse position is known
         field.position = CGPoint(x: -1000, y: -1000)
         addChild(field)
         repulsionField = field
@@ -217,17 +352,18 @@ class SnowScene: SKScene {
         guard let viewPoint = view?.convert(mouseInWindow, from: nil) else { return }
         let mouseInScene = convertPoint(fromView: viewPoint)
 
-        // Move repulsion field to cursor — pushes nearby snowflakes away
         repulsionField.position = mouseInScene
 
-        // Sweep the pile if cursor is near the surface
-        let surfaceY = heightMap.heightAt(x: mouseInScene.x)
-        if mouseInScene.y < surfaceY + 30 && surfaceY > 2 {
-            heightMap.sweepSnow(atX: mouseInScene.x, radius: 60, amount: CGFloat(deltaTime) * 200)
+        // Pile sweep only in snow mode
+        if mode == .snow {
+            let surfaceY = heightMap.heightAt(x: mouseInScene.x)
+            if mouseInScene.y < surfaceY + 30 && surfaceY > 2 {
+                heightMap.sweepSnow(atX: mouseInScene.x, radius: 60, amount: CGFloat(deltaTime) * 200)
+            }
         }
     }
 
-    // MARK: - Pile
+    // MARK: - Pile (snow only)
 
     private func setupPile() {
         let node = SKShapeNode()
@@ -287,7 +423,7 @@ class SnowScene: SKScene {
         return img.cgImage(forProposedRect: nil, context: nil, hints: nil)!
     }
 
-    // MARK: - Glow
+    // MARK: - Glow (snow only)
 
     private func setupGlow() {
         let node = SKShapeNode()
@@ -301,13 +437,13 @@ class SnowScene: SKScene {
         glowNode = node
     }
 
-    // MARK: - Landing Puffs
+    // MARK: - Landing Puffs (snow only)
 
     private func setupPuffEmitters() {
         for _ in 0..<3 {
             let emitter = SKEmitterNode()
             emitter.numParticlesToEmit = 4
-            emitter.particleBirthRate = 0 // dormant until triggered
+            emitter.particleBirthRate = 0
             emitter.particleLifetime = 0.3
             emitter.particleLifetimeRange = 0.1
             emitter.particleSpeed = 20
@@ -338,7 +474,7 @@ class SnowScene: SKScene {
         emitter.numParticlesToEmit = 4
     }
 
-    // MARK: - Landing Sparkles
+    // MARK: - Landing Sparkles (snow only)
 
     private func setupSparkles() {
         for _ in 0..<5 {

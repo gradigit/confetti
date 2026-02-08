@@ -10,6 +10,8 @@ struct CLIConfig {
     var preset: String?
     var configPath: String?
     var saveConfig = false
+    var windowLevel: String?
+    var stopOnModify: String?
 
     // Physics overrides (nil = use base config value)
     var birthRate: Float?
@@ -109,6 +111,27 @@ struct CLIConfig {
                     fputs("Error: --lifetime requires a positive number\n", stderr)
                     exit(1)
                 }
+            case "--window-level":
+                if i + 1 < args.count {
+                    let val = args[i + 1].lowercased()
+                    guard ["normal", "floating", "statusbar"].contains(val) else {
+                        fputs("Error: --window-level must be normal, floating, or statusBar\n", stderr)
+                        exit(1)
+                    }
+                    config.windowLevel = val
+                    i += 1
+                } else {
+                    fputs("Error: --window-level requires a value (normal, floating, statusBar)\n", stderr)
+                    exit(1)
+                }
+            case "--stop-on-modify":
+                if i + 1 < args.count {
+                    config.stopOnModify = args[i + 1]
+                    i += 1
+                } else {
+                    fputs("Error: --stop-on-modify requires a file path\n", stderr)
+                    exit(1)
+                }
             case "--config":
                 if i + 1 < args.count {
                     config.configPath = args[i + 1]
@@ -134,7 +157,7 @@ struct CLIConfig {
                 printHelp()
                 exit(0)
             case "-v", "--version":
-                print("confetti 1.1.0")
+                print("confetti 1.2.0")
                 exit(0)
             default:
                 fputs("Unknown option: \(args[i])\n", stderr)
@@ -157,6 +180,8 @@ struct CLIConfig {
           -i, --intensity <0.0-1.0>  Particle intensity (default: 1.0)
           -s, --screen <index>       Screen index (default: all screens)
           -p, --preset <name>        Use a preset configuration
+          --window-level <level>     Window level: normal, floating, statusBar (default: statusBar)
+          --stop-on-modify <path>    Stop when file is modified (for hook integration)
           -v, --version              Show version
           -h, --help                 Show this help
 
@@ -175,15 +200,22 @@ struct CLIConfig {
 
         Presets: \(ConfettiConfig.presetNames.joined(separator: ", "))
 
+        Blizzard singleton: When -p blizzard is used with --stop-on-modify, the first
+        process claims ownership. Subsequent launches escalate with distinct visuals
+        (pastel colors, different snowflake shapes). Each session de-escalates when its
+        watched file is modified. The last session triggers a melt animation and exit.
+
         Priority: defaults < config file < preset < CLI flags
 
         Examples:
-          confetti                        Fire confetti on all screens
-          confetti -p intense             Use intense preset
-          confetti -p blizzard            Interactive snow with accumulation
-          confetti --velocity 2000        Custom velocity
-          confetti -p subtle --spin 20    Preset with override
-          confetti --save-config          Save defaults to config file
+          confetti                                  Fire confetti on all screens
+          confetti -p intense                       Use intense preset
+          confetti -p blizzard                      Interactive snow with accumulation
+          confetti -p blizzard --stop-on-modify f   Stop blizzard when file f changes
+          confetti --window-level floating          Use floating window level
+          confetti --velocity 2000                  Custom velocity
+          confetti -p subtle --spin 20              Preset with override
+          confetti --save-config                    Save defaults to config file
         """)
     }
 }
@@ -241,6 +273,8 @@ func resolveConfig(cli: CLIConfig) -> ConfettiConfig {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var controller: ConfettiController?
+    var coordinator: BlizzardCoordinator?
+    var transcriptWatcher: TranscriptWatcher?
     var cliConfig = CLIConfig()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -291,6 +325,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        let windowLevel: WindowLevel
+        switch cliConfig.windowLevel?.lowercased() {
+        case "normal": windowLevel = .normal
+        case "floating": windowLevel = .floating
+        default: windowLevel = .statusBar
+        }
+
+        // Blizzard uses BlizzardCoordinator for singleton IPC and session management
+        if config.emissionStyle == .blizzard {
+            let coord = BlizzardCoordinator(
+                screens: screens,
+                windowLevel: windowLevel,
+                duration: cliConfig.duration
+            )
+            let isOwner = coord.start(transcriptPath: cliConfig.stopOnModify)
+            if !isOwner {
+                // Posted escalation to existing owner — exit immediately
+                NSApp.terminate(nil)
+                return
+            }
+            self.coordinator = coord
+            return
+        }
+
+        // Non-blizzard mode
         let emissionDuration: Double
         switch config.emissionStyle {
         case .cannons:
@@ -298,38 +357,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .curtain:
             emissionDuration = 5.0
         case .blizzard:
-            emissionDuration = 0  // Blizzard runs via SpriteKit, not CAEmitterLayer
+            emissionDuration = 0
         }
 
         controller = ConfettiController(
             config: config,
             angles: .default,
             emissionDuration: emissionDuration,
-            intensity: cliConfig.intensity
+            intensity: cliConfig.intensity,
+            windowLevel: windowLevel
         )
         controller?.fire(on: screens)
 
-        // Blizzard: auto-exits when pile is full or user sweeps enough snow.
-        // Also respects --duration as a hard timeout.
-        if config.emissionStyle == .blizzard {
-            controller?.onBlizzardComplete = { [weak self] in
-                self?.controller?.cleanup()
-                NSApp.terminate(nil)
-            }
-            if let duration = cliConfig.duration {
-                DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
-                    self?.controller?.stopSnowing()
-                }
-            }
-        } else {
-            // Exit after specified duration, or wait for all particles to finish
-            let autoDuration = emissionDuration + Double(config.lifetime)
-            let exitDuration = cliConfig.duration ?? autoDuration
-            DispatchQueue.main.asyncAfter(deadline: .now() + exitDuration) { [weak self] in
+        // Non-blizzard --stop-on-modify: watch file and exit on change
+        if let watchPath = cliConfig.stopOnModify {
+            transcriptWatcher = TranscriptWatcher(path: watchPath)
+            transcriptWatcher?.onChange = { [weak self] in
                 self?.controller?.cleanup()
                 NSApp.terminate(nil)
             }
         }
+
+        // Exit after specified duration, or wait for all particles to finish
+        let autoDuration = emissionDuration + Double(config.lifetime)
+        let exitDuration = cliConfig.duration ?? autoDuration
+        DispatchQueue.main.asyncAfter(deadline: .now() + exitDuration) { [weak self] in
+            self?.controller?.cleanup()
+            NSApp.terminate(nil)
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // PID file cleanup for blizzard coordinator
+        coordinator = nil
     }
 }
 

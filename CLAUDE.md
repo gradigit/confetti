@@ -15,21 +15,24 @@ cp .build/release/confetti ~/.local/bin/ # Install locally
 
 | File | Purpose |
 |------|---------|
-| `Sources/ConfettiKit/ConfettiConfig.swift` | Particle config, shape enum, emission styles, and presets |
+| `Sources/ConfettiKit/ConfettiConfig.swift` | Particle config, shape enum, emission styles, WindowLevel, and presets |
 | `Sources/ConfettiKit/ConfettiEmitter.swift` | Core emitter + texture caching |
-| `Sources/ConfettiKit/ConfettiController.swift` | Orchestrates multi-screen confetti display |
+| `Sources/ConfettiKit/ConfettiController.swift` | Orchestrates multi-screen confetti display, escalate/deescalate API |
 | `Sources/ConfettiKit/ConfettiWindow.swift` | Transparent click-through overlay window (internal) |
-| `Sources/ConfettiKit/BlizzardScene.swift` | SpriteKit snow scene with pile accumulation, wind, mouse interaction |
+| `Sources/ConfettiKit/BlizzardScene.swift` | SpriteKit snow scene with multi-session layers, pile accumulation, wind, mouse interaction |
 | `Sources/ConfettiKit/BlizzardWindow.swift` | Transparent overlay window hosting the SpriteKit blizzard scene |
-| `Sources/ConfettiKit/HeightMap.swift` | Snow pile height data, deposit/sweep logic, path generation |
+| `Sources/ConfettiKit/BlizzardSessionStyle.swift` | Per-session visual params (tint, shape, wind), palette, session layer class, textures |
+| `Sources/ConfettiKit/HeightMap.swift` | Snow pile height data, deposit/sweep logic, path generation, color deposit tracking |
 | `Sources/confetti/main.swift` | CLI entry point with arg parsing |
 | `Sources/confetti/ConfigFile.swift` | JSON config file loading/saving |
+| `Sources/confetti/BlizzardCoordinator.swift` | Singleton IPC: PID file ownership, DNC escalation, session lifecycle, SIGTERM |
+| `Sources/confetti/TranscriptWatcher.swift` | GCD file system watcher for transcript modification detection |
 | `Sources/benchmark/main.swift` | Performance benchmark suite |
 
 ## Distribution
 
 - **Homebrew tap**: `gradigit/homebrew-tap` with formula at `Formula/confetti.rb`
-- **GitHub Release**: v1.1.0 with universal binary (arm64 + x86_64) tarball
+- **GitHub Release**: v1.2.0 with universal binary (arm64 + x86_64) tarball
 - **Release workflow**: `.github/workflows/release.yml` triggers on `v*` tags, builds universal binary, publishes release
 - Install command: `brew install gradigit/tap/confetti`
 
@@ -37,8 +40,10 @@ cp .build/release/confetti ~/.local/bin/ # Install locally
 
 - Source: `my-video/` (Remotion project, not committed to repo)
 - Final render: `assets/ConfettiPromo.mp4` (committed)
-- Embedded in README via GitHub user-attachments URL
-- **Important**: The video shows `$ brew install gradigit/tap/confetti` in the closing scene and preset names/descriptions throughout. If the install command, tap name, preset names, or any visible text in the video changes, the video must be re-rendered and re-uploaded, or removed from the README. The video source is in `my-video/` locally.
+- Blizzard preview: `assets/BlizzardPreview.mp4` (committed, screen recording of single-session blizzard)
+- Promo video embedded in README via GitHub user-attachments URL; blizzard preview referenced via raw repo URL
+- **Important**: The promo video shows `$ brew install gradigit/tap/confetti` in the closing scene and preset names/descriptions throughout. If the install command, tap name, preset names, or any visible text in the video changes, the video must be re-rendered and re-uploaded, or removed from the README. The video source is in `my-video/` locally.
+- **TODO**: Blizzard preview video only shows single-session. Needs re-recording to show multi-session escalation with colored snow layers.
 
 ## Architecture
 
@@ -50,7 +55,11 @@ cp .build/release/confetti ~/.local/bin/ # Install locally
 - Blizzard preset uses SpriteKit (`BlizzardScene` + `BlizzardWindow`) — a completely separate rendering path from CAEmitterLayer
 - Textures are cached statically on first access (`static let` for thread-safe lazy init)
 - Windows use `CATransaction.flush()` to ensure visibility before emitting
-- Blizzard windows use `.statusBar` level; confetti windows also use `.statusBar` level
+- Window level is configurable via `--window-level` (normal/floating/statusBar), defaults to `.statusBar`
+- Blizzard uses `BlizzardCoordinator` for singleton pattern — PID file at `/tmp/confetti-blizzard.pid`, `DistributedNotificationCenter` for escalation
+- Multi-session blizzard: each session gets a distinct pastel color, snowflake shape, wind pattern, and fall speed via `BlizzardSessionLayer`
+- `--stop-on-modify` watches a file with `DispatchSource.makeFileSystemObjectSource` — fires when file grows beyond initial size
+- Four pastel session slots (ice blue, lavender, mint, rose) cycle for 5+ sessions
 
 ## Code Style
 
@@ -94,6 +103,11 @@ Pre-planning artifacts for the snow accumulation feature. The prototypes in `Pro
 - **Blizzard end conditions**: Any column hits 25% screen height (auto-stop), user sweeps 8% of max pile area (auto-stop, scales with screen size), or programmatic `stopSnowing()` call. All trigger melt animation: pile heights decay + alpha fades over 2s, airborne flakes fade simultaneously → `onBlizzardComplete` callback.
 - **Blizzard physics tuning**: Gravity -0.25 (not -0.13 from prototype) and linearDamping 0.15 (not 0.3) give ~4s fall time. Spawn rate 8.3/sec (interval 0.12s). Original prototype values were too floaty for visible accumulation in reasonable time.
 - **Blizzard ignores physics CLI flags**: `--gravity`, `--velocity`, `--birth-rate`, `--lifetime`, `--spin`, `--scale`, `--intensity` are all ignored for blizzard (SpriteKit uses hardcoded physics). A warning is printed to stderr if the user passes them.
+- **Singleton blizzard via BlizzardCoordinator**: First `confetti -p blizzard --stop-on-modify <path>` claims PID file at `/tmp/confetti-blizzard.pid`. Subsequent launches post `DistributedNotificationCenter` escalation and exit immediately. Owner adds session layers with distinct visuals.
+- **Multi-session visual distinction**: 4 pastel palette slots (ice blue #BFE0FF, lavender #D6C7FF, mint #BFFFDF, rose #FFCCDA) with different snowflake shapes (circle, hexagon, star, diamond), wind patterns, fall speeds, and rotation styles. Field bitmask isolation ensures each session's wind only affects its own particles.
+- **Session removal vs scene completion**: `removeSessionLayer` fades one session's flakes without triggering melt. `stopSnowing` triggers full scene shutdown with melt animation. Last session removal auto-triggers `stopSnowing`.
+- **TranscriptWatcher**: Records initial file size, fires at most once when file grows. Prevents false triggers from the hook's own transcript entry still being flushed.
+- **SIGTERM graceful shutdown**: Uses `DispatchSource.makeSignalSource` (not `signal()`) for Cocoa-safe signal handling. Triggers melt animation before exit.
 
 ## Known Issues
 
@@ -105,5 +119,6 @@ Pre-planning artifacts for the snow accumulation feature. The prototypes in `Pro
 - `CAEmitterLayer` cell properties can't be modified directly after setup — use `setValue(_:forKeyPath: "emitterCells.<name>.<property>")` on the emitter layer
 - HeightMap range calculations with off-screen coordinates can produce inverted ranges (`start > end`) — always guard before `start...end`
 - SpriteKit physics values (gravity, velocity) are NOT the same scale as CAEmitterLayer — CA values like velocity=1500 and yAcceleration=-750 are way too extreme for SpriteKit and make particles invisible (off-screen in a single frame). SpriteKit confetti needs manual tuning; values around velocity=350, gravity=-5 are a starting point
+- `NSColor.white.getRed()` deadlocks during `skView.presentScene()` — color space conversion from calibratedWhite to RGB conflicts with SpriteKit's internal locks. Fix: use raw RGB values during scene setup (`didMove(to:)`), only call NSColor methods after scene is live. Don't auto-create session layers in `didMove(to:)` — let the coordinator add them after `fire()` returns.
 - macOS GUI apps (NSApplication) can't create windows from background shell processes — must be run from a foreground terminal
 - The installed binary at `~/.local/bin/confetti` is separate from the debug build at `.build/debug/confetti` — after code changes, run `swift build -c release && cp .build/release/confetti ~/.local/bin/` to update the installed copy

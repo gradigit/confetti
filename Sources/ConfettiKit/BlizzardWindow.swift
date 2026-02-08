@@ -7,7 +7,7 @@ final class BlizzardWindow: NSWindow {
     let skView: SKView
     let blizzardScene: BlizzardScene
 
-    init(screen: NSScreen) {
+    init(screen: NSScreen, windowLevel: WindowLevel = .statusBar) {
         let skView = SKView(frame: CGRect(origin: .zero, size: screen.frame.size))
         self.skView = skView
         self.blizzardScene = BlizzardScene(size: screen.frame.size)
@@ -23,7 +23,7 @@ final class BlizzardWindow: NSWindow {
         backgroundColor = .clear
         hasShadow = false
         ignoresMouseEvents = true
-        level = .statusBar
+        level = windowLevel.nsWindowLevel
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
         skView.allowsTransparency = true

@@ -1,5 +1,20 @@
 import AppKit
 
+/// Window level for overlay windows
+public enum WindowLevel: String, CaseIterable {
+    case normal
+    case floating
+    case statusBar
+
+    public var nsWindowLevel: NSWindow.Level {
+        switch self {
+        case .normal: return .normal
+        case .floating: return .floating
+        case .statusBar: return .statusBar
+        }
+    }
+}
+
 /// Shape types for confetti particles
 public enum ConfettiShape: CaseIterable {
     case rectangle, triangle, circle
