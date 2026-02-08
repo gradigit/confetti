@@ -134,7 +134,7 @@ struct CLIConfig {
                 printHelp()
                 exit(0)
             case "-v", "--version":
-                print("confetti 1.0.0")
+                print("confetti 1.1.0")
                 exit(0)
             default:
                 fputs("Unknown option: \(args[i])\n", stderr)
@@ -274,6 +274,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             screens = [NSScreen.screens[index]]
         } else {
             screens = NSScreen.screens
+        }
+
+        // Warn about ignored CLI flags for blizzard preset
+        if config.emissionStyle == .blizzard {
+            var ignored: [String] = []
+            if cliConfig.birthRate != nil { ignored.append("--birth-rate") }
+            if cliConfig.lifetime != nil { ignored.append("--lifetime") }
+            if cliConfig.velocity != nil { ignored.append("--velocity") }
+            if cliConfig.gravity != nil { ignored.append("--gravity") }
+            if cliConfig.spin != nil { ignored.append("--spin") }
+            if cliConfig.scale != nil { ignored.append("--scale") }
+            if cliConfig.intensity != 1.0 { ignored.append("--intensity") }
+            if !ignored.isEmpty {
+                fputs("Warning: blizzard uses SpriteKit physics; \(ignored.joined(separator: ", ")) ignored\n", stderr)
+            }
         }
 
         let emissionDuration: Double

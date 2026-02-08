@@ -129,6 +129,7 @@ struct HeightMap {
     /// Open path tracing only the top surface (for glow node)
     func buildSurfacePath() -> CGPath {
         let path = CGMutablePath()
+        guard !heights.isEmpty else { return path }
         path.move(to: CGPoint(x: 0, y: heights[0]))
 
         for i in 1..<heights.count {

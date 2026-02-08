@@ -13,7 +13,8 @@ class BlizzardScene: SKScene {
             NSBezierPath(ovalIn: rect).fill()
             return true
         }
-        return SKTexture(cgImage: image.cgImage(forProposedRect: nil, context: nil, hints: nil)!)
+        let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) ?? fallbackCGImage
+        return SKTexture(cgImage: cgImage)
     }()
 
     private static let sparkleTexture: SKTexture = {
@@ -37,7 +38,8 @@ class BlizzardScene: SKScene {
                                    options: .drawsAfterEndLocation)
             return true
         }
-        return SKTexture(cgImage: image.cgImage(forProposedRect: nil, context: nil, hints: nil)!)
+        let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) ?? fallbackCGImage
+        return SKTexture(cgImage: cgImage)
     }()
 
     // MARK: - Completion
@@ -69,6 +71,8 @@ class BlizzardScene: SKScene {
     private var isSpawning = true
     /// Whether the scene is winding down (fading out pile after all flakes settled)
     private var isWindingDown = false
+    /// Whether onComplete has already fired (guards against repeated calls)
+    private var hasCompleted = false
 
     /// Sweep area threshold: 8% of max pile area (scales with screen size)
     private var sweepThreshold: CGFloat = 0
@@ -144,7 +148,8 @@ class BlizzardScene: SKScene {
             let alpha = CGFloat(1.0 - progress)
             pileNode.alpha = alpha
             glowNode.alpha = alpha
-            if melted || progress >= 1.0 {
+            if !hasCompleted && (melted || progress >= 1.0) {
+                hasCompleted = true
                 DispatchQueue.main.async { [weak self] in
                     self?.onComplete?()
                 }
@@ -163,9 +168,10 @@ class BlizzardScene: SKScene {
             }
         }
 
-        // Check for landings and update pile
-        for i in stride(from: activeSnowflakes.count - 1, through: 0, by: -1) {
-            let flake = activeSnowflakes[i]
+        // Check for landings and update pile (retain-filter to avoid O(n²) shifting)
+        var retained: [SKSpriteNode] = []
+        retained.reserveCapacity(activeSnowflakes.count)
+        for flake in activeSnowflakes {
             let surfaceY = heightMap.heightAt(x: flake.position.x)
 
             if flake.position.y <= surfaceY {
@@ -177,12 +183,13 @@ class BlizzardScene: SKScene {
                     triggerSparkle(at: landingPoint)
                 }
                 flake.removeFromParent()
-                activeSnowflakes.remove(at: i)
             } else if flake.position.x < -100 || flake.position.x > size.width + 100 {
                 flake.removeFromParent()
-                activeSnowflakes.remove(at: i)
+            } else {
+                retained.append(flake)
             }
         }
+        activeSnowflakes = retained
 
         // Auto-stop: pile is full
         if isSpawning && heightMap.isCapped {
@@ -323,7 +330,7 @@ class BlizzardScene: SKScene {
             space: colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else {
-            return SKTexture(cgImage: fallbackImage())
+            return SKTexture(cgImage: fallbackCGImage)
         }
 
         let topColor = NSColor(white: 0.95, alpha: 1.0).cgColor
@@ -334,7 +341,7 @@ class BlizzardScene: SKScene {
             colors: [bottomColor, topColor] as CFArray,
             locations: [0.0, 1.0]
         ) else {
-            return SKTexture(cgImage: fallbackImage())
+            return SKTexture(cgImage: fallbackCGImage)
         }
 
         ctx.drawLinearGradient(
@@ -345,19 +352,28 @@ class BlizzardScene: SKScene {
         )
 
         guard let cgImage = ctx.makeImage() else {
-            return SKTexture(cgImage: fallbackImage())
+            return SKTexture(cgImage: fallbackCGImage)
         }
         return SKTexture(cgImage: cgImage)
     }
 
-    private static func fallbackImage() -> CGImage {
-        let img = NSImage(size: NSSize(width: 1, height: 1), flipped: false) { rect in
-            NSColor.white.setFill()
-            rect.fill()
-            return true
+    private static let fallbackCGImage: CGImage = {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: nil, width: 1, height: 1,
+            bitsPerComponent: 8, bytesPerRow: 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            fatalError("Cannot create CGContext for fallback texture")
         }
-        return img.cgImage(forProposedRect: nil, context: nil, hints: nil)!
-    }
+        ctx.setFillColor(CGColor.white)
+        ctx.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        guard let image = ctx.makeImage() else {
+            fatalError("Cannot create CGImage for fallback texture")
+        }
+        return image
+    }()
 
     // MARK: - Glow
 

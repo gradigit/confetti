@@ -19,6 +19,12 @@ https://github.com/user-attachments/assets/ab8bb451-376f-4753-b5f8-29f6e2e51c18
 - Works as a Swift package or standalone CLI
 - Zero dependencies
 
+## Quick start with an AI agent
+
+If you use Claude Code, Gemini CLI, Copilot, or any AI coding agent — just paste the repo link and ask it to set up confetti for you. It'll install the binary and walk you through choosing presets for task completion, permission requests, and other triggers.
+
+> **[AI agent instructions](#ai-agent-instructions)** — the agent reads this section and runs a setup wizard.
+
 ## Installation
 
 ### Homebrew
@@ -124,6 +130,44 @@ confetti --help
 ```bash
 # List presets with their values
 confetti --presets
+```
+
+### Blizzard preset
+
+Blizzard is a separate rendering path from the other presets. While the rest use Core Animation (`CAEmitterLayer`) for fire-and-forget GPU-managed particles, blizzard uses SpriteKit — a full physics engine with per-particle tracking, collision detection, and scene graph.
+
+This means:
+
+- Snow accumulates into a pile at the bottom of the screen using a height map
+- You can sweep the pile away by moving your mouse cursor through it
+- A repulsion field around the cursor pushes falling snowflakes aside
+- Wind drift via a noise field gives organic movement
+- The pile has a glow edge and gradient fill
+
+Blizzard ends automatically when any column of the pile reaches 25% screen height, or when you sweep away enough snow (8% of max pile area). Both trigger a 2-second melt animation where the pile shrinks and fades. You can also set a hard timeout with `--duration`.
+
+Physics flags (`--gravity`, `--velocity`, etc.) are ignored for blizzard — it uses its own tuned SpriteKit physics internally. A warning is printed if you pass them.
+
+```bash
+confetti -p blizzard        # Runs until pile fills or you sweep it away
+confetti -p blizzard -d 20  # Hard timeout at 20 seconds, then melts
+```
+
+#### Swift API
+
+```swift
+let config = ConfettiConfig.preset(named: "blizzard")!
+let controller = ConfettiController(config: config)
+
+// Called once all screens finish their melt animation
+controller.onBlizzardComplete = {
+    controller.cleanup()
+}
+
+controller.fire()
+
+// Optionally stop early — triggers melt, then onBlizzardComplete
+controller.stopSnowing()
 ```
 
 ### Config file
@@ -312,7 +356,7 @@ Use different presets for different events. Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "(~/.local/bin/confetti -p snow &) 2>/dev/null"
+            "command": "(~/.local/bin/confetti -p blizzard &) 2>/dev/null"
           }
         ]
       }
@@ -321,7 +365,7 @@ Use different presets for different events. Add to `~/.claude/settings.json`:
 }
 ```
 
-`Stop` fires the default cannons when Claude finishes a task. `PermissionRequest` fires gentle snow when Claude needs your input.
+`Stop` fires the default cannons when Claude finishes a task. `PermissionRequest` drops an interactive blizzard while you review — snow piles up and you can sweep it away with your mouse.
 
 ### Skill
 
@@ -399,60 +443,102 @@ Add a "Run Shell Script" action to any workflow:
 
 ## AI agent instructions
 
-> For AI coding agents (Claude Code, Gemini CLI, Copilot, etc.). Install confetti and set it up for the user.
+> For AI coding agents (Claude Code, Gemini CLI, Copilot, etc.). Install confetti, then walk the user through setup as a wizard.
 
-### Install
+### Step 1: Install
 
 ```bash
-# Option 1: Homebrew (preferred)
+# Homebrew (preferred)
 brew install gradigit/tap/confetti
 
-# Option 2: Direct download
+# Or direct download
 curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.1.0.tar.gz | tar xz
 mkdir -p ~/.local/bin && mv confetti ~/.local/bin/
 ```
 
-### Verify
+Verify: `confetti --version` should print `confetti 1.1.0`.
 
-```bash
-confetti --version
-# Expected: confetti 1.1.0
-```
+### Step 2: Setup wizard
 
-### Set up Claude Code hooks
+Ask the user these three questions to configure their setup. Apply answers to `~/.claude/settings.json` (Claude Code) or the equivalent hook system for other agents.
 
-Add hooks to `~/.claude/settings.json`. Cannons on task completion, snow when waiting for input:
+**Q1: "Which confetti effect do you want when I finish a task?"**
+
+| Option | Description |
+|--------|-------------|
+| `default` (recommended) | Confetti cannons from both corners |
+| `subtle` | Fewer particles, understated |
+| `intense` | More particles, bigger burst |
+| `fireworks` | Fast explosive burst with heavy gravity |
+| `snow` | Gentle falling snow |
+| `blizzard` | Interactive snow that piles up (heavier on GPU) |
+| None | No effect |
+
+Apply to the **Stop** hook.
+
+**Q2: "Which effect do you want when I ask for your permission?"**
+
+| Option | Description |
+|--------|-------------|
+| `snow` (recommended) | Gentle ambient snow while you review |
+| `blizzard` | Snow piles up while you review, sweep it with your mouse. Recommended if you don't mind a slightly heavier effect. |
+| `subtle` | Understated confetti |
+| None | No effect |
+
+Apply to the **PermissionRequest** hook.
+
+**Q3: "Want confetti in any other situations?"**
+
+Suggest these options and let the user pick any combination:
+
+- **Long-running commands** (recommended) — confetti when a terminal command takes over 30 seconds. Add to `.zshrc`:
+
+  ```bash
+  autoload -Uz add-zsh-hook
+
+  __confetti_preexec() { __cmd_start=$EPOCHSECONDS }
+  __confetti_precmd() {
+    if [[ -n $__cmd_start ]] && (( EPOCHSECONDS - __cmd_start >= 30 )); then
+      (~/.local/bin/confetti &) 2>/dev/null
+    fi
+    unset __cmd_start
+  }
+
+  add-zsh-hook preexec __confetti_preexec
+  add-zsh-hook precmd __confetti_precmd
+  ```
+
+- **Git push** — add `alias gpush='git push && confetti'` to `.zshrc`
+- **Builds** — add `alias cbuild='swift build && confetti'` to `.zshrc`
+
+### Hook format (Claude Code)
+
+Hook command format: `(~/.local/bin/confetti -p <preset> &) 2>/dev/null` (omit `-p` for default).
+
+Hooks go in `~/.claude/settings.json`:
 
 ```json
 {
   "hooks": {
     "Stop": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "(~/.local/bin/confetti &) 2>/dev/null"
-          }
-        ]
+        "hooks": [{ "type": "command", "command": "(~/.local/bin/confetti &) 2>/dev/null" }]
       }
     ],
     "PermissionRequest": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "(~/.local/bin/confetti -p snow &) 2>/dev/null"
-          }
-        ]
+        "hooks": [{ "type": "command", "command": "(~/.local/bin/confetti -p snow &) 2>/dev/null" }]
       }
     ]
   }
 }
 ```
 
-### Test
+Replace preset names based on the user's answers above. Available hook events: `Stop` (task finished), `PermissionRequest` (needs input), `SessionStart`, `PreCompact`, `SessionEnd`.
 
-Run `confetti` to check it works. It exits on its own after the particles fade.
+### Step 3: Test
+
+Run `confetti` to verify installation. It exits on its own after the particles fade.
 
 ## Architecture
 
