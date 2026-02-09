@@ -3,7 +3,7 @@ import CoreGraphics
 /// Manages the snow pile height data and generates paths for rendering.
 /// Height grows only when snow is deposited via `depositSnow(atX:)`.
 struct HeightMap {
-    let columnWidth: CGFloat = 4.0
+    let columnWidth: CGFloat = 8.0
     let screenWidth: CGFloat
     let maxHeight: CGFloat
     var heights: [CGFloat]
@@ -25,10 +25,11 @@ struct HeightMap {
         self.screenWidth = screenWidth
         self.maxHeight = 0.25 * screenHeight
 
-        let columnCount = Int(ceil(screenWidth / 4.0))
+        // Use columnWidth property instead of hardcoded 4.0
+        let columnCount = Int(ceil(screenWidth / columnWidth))
         self.heights = [CGFloat](repeating: 0, count: columnCount)
         self.colorDeposits = [ColorDeposit](repeating: ColorDeposit(), count: columnCount)
-        self.splatColumns = Int(splatRadius / 4.0)
+        self.splatColumns = Int(splatRadius / columnWidth)
     }
 
     var averageHeight: CGFloat {
