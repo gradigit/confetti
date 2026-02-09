@@ -248,7 +248,7 @@ class BlizzardScene: SKScene {
             glowNode.alpha = CGFloat(fadeAlpha)
 
             // Glow pulse — subtle sine wave
-            let pulse = 0.3 + 0.1 * sin(currentTime * .pi)
+            let pulse = 0.15 + 0.05 * sin(currentTime * .pi)
             glowNode.strokeColor = blendedGlowColor().withAlphaComponent(pulse)
 
             pathUpdateAccumulator = 0
@@ -507,9 +507,10 @@ class BlizzardScene: SKScene {
 
     private func setupGlow() {
         let node = SKShapeNode()
-        node.strokeColor = NSColor(white: 1.0, alpha: 0.3)
-        node.lineWidth = 6
-        node.glowWidth = 4
+        node.strokeColor = NSColor(white: 1.0, alpha: 0.15)
+        node.lineWidth = 12
+        // glowWidth is performance heavy on high-res displays
+        node.glowWidth = 0
         node.fillColor = .clear
         node.zPosition = 11
         node.path = heightMap.buildSurfacePath()
