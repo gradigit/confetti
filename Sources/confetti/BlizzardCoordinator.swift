@@ -83,7 +83,10 @@ final class BlizzardCoordinator {
         ctrl.fire(on: screens)
         self.controller = ctrl
 
-        // Add the default session layer and register watcher
+        // Add the default session layer and register watcher.
+        // NOTE: ctrl.fire() creates the BlizzardWindow(s) synchronously.
+        // ConfettiController.escalateBlizzard() calls addSessionLayer() on the
+        // BlizzardScene attached to those windows.
         sessionIDs.append(defaultSessionID)
         ctrl.escalateBlizzard(sessionID: defaultSessionID)
         if let path = transcriptPath {
@@ -111,6 +114,7 @@ final class BlizzardCoordinator {
 
     // MARK: - Session Management
 
+    /// Adds a new session via escalation. Called when another process posts a notification.
     private func addSession(transcriptPath: String?) {
         let sessionID = UUID().uuidString
 

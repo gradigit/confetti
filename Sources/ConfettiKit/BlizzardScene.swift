@@ -6,6 +6,20 @@ import SpriteKit
 /// Can also be stopped programmatically via `stopSnowing()`.
 class BlizzardScene: SKScene {
 
+    private enum Constants {
+        static let pathUpdateInterval: TimeInterval = 0.1 // 10 Hz
+        static let meltDuration: TimeInterval = 2.0
+        static let repulsionBitmask: UInt32 = 0x80000000
+        static let gravity = CGVector(dx: 0.01, dy: -0.25)
+        static let sweepThresholdFactor: CGFloat = 0.08
+        static let sweepRadiusFactor: CGFloat = 0.04
+        static let sweepRateFactor: CGFloat = 0.15
+        static let fadeOutDuration: TimeInterval = 1.0
+        static let meltDecayFactor: CGFloat = 0.97
+        static let glowPulseBase: CGFloat = 0.3
+        static let glowPulseAmplitude: CGFloat = 0.1
+    }
+
     // MARK: - Completion
 
     /// Called when the blizzard finishes (pile fade-out complete). Always called on main thread.
@@ -13,17 +27,16 @@ class BlizzardScene: SKScene {
 
     // MARK: - State
 
-    private var heightMap: HeightMap!
-    private var pileNode: SKShapeNode!
-    private var glowNode: SKShapeNode!
-    private var repulsionField: SKFieldNode!
+    private var heightMap: HeightMap
+    private var pileNode: SKShapeNode
+    private var glowNode: SKShapeNode
+    private var repulsionField: SKFieldNode
 
     private var sessionLayers: [BlizzardSessionLayer] = []
     private var nextSessionIndex: Int = 0
 
     private var lastUpdateTime: TimeInterval = 0
     private var pathUpdateAccumulator: TimeInterval = 0
-    private let pathUpdateInterval: TimeInterval = 0.1 // 10 Hz
 
     /// Whether the scene is winding down (fading out pile after all flakes settled)
     private var isWindingDown = false
@@ -31,24 +44,45 @@ class BlizzardScene: SKScene {
     private var hasCompleted = false
 
     /// Sweep area threshold: 8% of max pile area (scales with screen size)
-    private var sweepThreshold: CGFloat = 0
-    private var sweepRadius: CGFloat = 60
-    private var sweepRate: CGFloat = 200
+    private let sweepThreshold: CGFloat
+    private let sweepRadius: CGFloat
+    private let sweepRate: CGFloat
 
     private var meltAccumulator: TimeInterval = 0
-    private let meltDuration: TimeInterval = 2.0
-
-    /// Repulsion field bitmask — shared across all sessions
-    private let repulsionBitmask: UInt32 = 0x80000000
 
     // MARK: - Init
 
     override init(size: CGSize) {
+        // Initialize logic helpers
+        self.heightMap = HeightMap(screenWidth: size.width, screenHeight: size.height)
+        self.sweepThreshold = Constants.sweepThresholdFactor * size.width * heightMap.maxHeight
+        self.sweepRadius = Constants.sweepRadiusFactor * size.width
+        self.sweepRate = Constants.sweepRateFactor * size.height
+
+        // Initialize visual nodes
+        self.pileNode = SKShapeNode()
+        self.glowNode = SKShapeNode()
+        self.repulsionField = SKFieldNode.radialGravityField()
+
         super.init(size: size)
+
+        setupScene()
     }
 
     required init?(coder aDecoder: NSCoder) {
-        super.init(coder: aDecoder)
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupScene() {
+        anchorPoint = .zero
+        backgroundColor = .clear
+        physicsWorld.gravity = Constants.gravity
+
+        setupRepulsionField()
+        setupPile()
+        setupGlow()
+        pileNode.alpha = 0
+        glowNode.alpha = 0
     }
 
     // MARK: - Public API
@@ -99,7 +133,7 @@ class BlizzardScene: SKScene {
         layer.isFadingOut = true
 
         // Fade out this session's airborne flakes
-        let fadeOut = SKAction.fadeOut(withDuration: 1.0)
+        let fadeOut = SKAction.fadeOut(withDuration: Constants.fadeOutDuration)
         for flake in layer.snowflakes {
             flake.run(fadeOut) {
                 flake.removeFromParent()
@@ -107,7 +141,7 @@ class BlizzardScene: SKScene {
         }
 
         // Remove wind field after flakes finish fading (so they don't suddenly go straight)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, weak layer] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Constants.fadeOutDuration) { [weak self, weak layer] in
             guard let layer = layer else { return }
             layer.windField?.removeFromParent()
             layer.windField = nil
@@ -136,27 +170,6 @@ class BlizzardScene: SKScene {
         sessionLayers.filter { !$0.isFadingOut }.count
     }
 
-    // MARK: - Scene Lifecycle
-
-    override func didMove(to view: SKView) {
-        anchorPoint = .zero
-        backgroundColor = .clear
-
-        // Gravity tuned for ~4s fall time from top to bottom
-        physicsWorld.gravity = CGVector(dx: 0.01, dy: -0.25)
-
-        heightMap = HeightMap(screenWidth: size.width, screenHeight: size.height)
-        sweepThreshold = 0.08 * size.width * heightMap.maxHeight
-        sweepRadius = 0.04 * size.width
-        sweepRate = 0.15 * size.height
-
-        setupRepulsionField()
-        setupPile()
-        setupGlow()
-        pileNode.alpha = 0
-        glowNode.alpha = 0
-    }
-
     // MARK: - Frame Update
 
     override func update(_ currentTime: TimeInterval) {
@@ -171,8 +184,8 @@ class BlizzardScene: SKScene {
         // Melt phase: shrink pile heights + fade alpha, then complete
         if isWindingDown {
             meltAccumulator += deltaTime
-            let progress = min(meltAccumulator / meltDuration, 1.0)
-            let melted = heightMap.melt(factor: 0.97)
+            let progress = min(meltAccumulator / Constants.meltDuration, 1.0)
+            let melted = heightMap.melt(factor: Constants.meltDecayFactor)
             pileNode.path = heightMap.buildPath()
             glowNode.path = heightMap.buildSurfacePath()
             let alpha = CGFloat(1.0 - progress)
@@ -239,7 +252,7 @@ class BlizzardScene: SKScene {
 
         // Update pile visuals
         pathUpdateAccumulator += deltaTime
-        if pathUpdateAccumulator >= pathUpdateInterval {
+        if pathUpdateAccumulator >= Constants.pathUpdateInterval {
             heightMap.smooth()
             pileNode.path = heightMap.buildPath()
             glowNode.path = heightMap.buildSurfacePath()
@@ -248,7 +261,7 @@ class BlizzardScene: SKScene {
             glowNode.alpha = CGFloat(fadeAlpha)
 
             // Glow pulse — subtle sine wave
-            let pulse = 0.3 + 0.1 * sin(currentTime * .pi)
+            let pulse = Constants.glowPulseBase + Constants.glowPulseAmplitude * sin(currentTime * .pi)
             glowNode.strokeColor = blendedGlowColor().withAlphaComponent(pulse)
 
             pathUpdateAccumulator = 0
@@ -298,7 +311,7 @@ class BlizzardScene: SKScene {
         body.affectedByGravity = true
         body.allowsRotation = style.allowsRotation
         // Respond to this session's wind + shared repulsion
-        body.fieldBitMask = (1 << UInt32(layer.sessionIndex % 30)) | repulsionBitmask
+        body.fieldBitMask = (1 << UInt32(layer.sessionIndex % 30)) | Constants.repulsionBitmask
         body.collisionBitMask = 0
         body.contactTestBitMask = 0
 
@@ -372,16 +385,14 @@ class BlizzardScene: SKScene {
     // MARK: - Mouse Interaction
 
     private func setupRepulsionField() {
-        let field = SKFieldNode.radialGravityField()
-        field.strength = -3.0
-        field.falloff = 2.0
-        field.region = SKRegion(radius: 80)
-        field.minimumRadius = 10
-        field.isEnabled = true
-        field.categoryBitMask = repulsionBitmask
-        field.position = CGPoint(x: -1000, y: -1000)
-        addChild(field)
-        repulsionField = field
+        repulsionField.strength = -3.0
+        repulsionField.falloff = 2.0
+        repulsionField.region = SKRegion(radius: 80)
+        repulsionField.minimumRadius = 10
+        repulsionField.isEnabled = true
+        repulsionField.categoryBitMask = Constants.repulsionBitmask
+        repulsionField.position = CGPoint(x: -1000, y: -1000)
+        addChild(repulsionField)
     }
 
     private func updateMouseInteraction(deltaTime: TimeInterval) {
@@ -407,15 +418,13 @@ class BlizzardScene: SKScene {
     // MARK: - Pile
 
     private func setupPile() {
-        let node = SKShapeNode()
-        node.fillColor = .white
-        node.fillTexture = BlizzardScene.createGradientTexture(height: Int(size.height), r: 1, g: 1, b: 1)
-        node.strokeColor = .clear
-        node.lineWidth = 0
-        node.zPosition = 10
-        node.path = heightMap.buildPath()
-        addChild(node)
-        pileNode = node
+        pileNode.fillColor = .white
+        pileNode.fillTexture = BlizzardScene.createGradientTexture(height: Int(size.height), r: 1, g: 1, b: 1)
+        pileNode.strokeColor = .clear
+        pileNode.lineWidth = 0
+        pileNode.zPosition = 10
+        pileNode.path = heightMap.buildPath()
+        addChild(pileNode)
     }
 
     private func updatePileGradient() {
@@ -506,15 +515,13 @@ class BlizzardScene: SKScene {
     // MARK: - Glow
 
     private func setupGlow() {
-        let node = SKShapeNode()
-        node.strokeColor = NSColor(white: 1.0, alpha: 0.3)
-        node.lineWidth = 6
-        node.glowWidth = 4
-        node.fillColor = .clear
-        node.zPosition = 11
-        node.path = heightMap.buildSurfacePath()
-        addChild(node)
-        glowNode = node
+        glowNode.strokeColor = NSColor(white: 1.0, alpha: 0.3)
+        glowNode.lineWidth = 6
+        glowNode.glowWidth = 4
+        glowNode.fillColor = .clear
+        glowNode.zPosition = 11
+        glowNode.path = heightMap.buildSurfacePath()
+        addChild(glowNode)
     }
 
     // MARK: - Landing Puffs (per-session)
