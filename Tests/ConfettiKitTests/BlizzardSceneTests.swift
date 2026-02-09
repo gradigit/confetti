@@ -22,7 +22,12 @@ final class BlizzardSceneTests: XCTestCase {
         XCTAssertNotNil(scene)
         XCTAssertEqual(scene.size, CGSize(width: 800, height: 600))
         XCTAssertEqual(scene.anchorPoint, .zero)
-        XCTAssertEqual(scene.backgroundColor, .clear)
+
+        // Colors can fail equality checks across color spaces (e.g. NSDeviceRGB vs Generic Gray)
+        // Check components instead or allow for color space differences
+        let color = scene.backgroundColor
+        XCTAssertEqual(color.alphaComponent, 0.0)
+
         // Verify nodes are added: pileNode, glowNode, repulsionField
         XCTAssertEqual(scene.children.count, 3)
     }
