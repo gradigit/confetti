@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.1] - unreleased
+
+### Fixed
+- Frame drops with several displays attached. 1.3.0 animated one Core Animation layer per
+  particle; with three screens (two QHD) the system compositor fell ~12 fps behind the 1.2.0
+  emitter. Confetti now runs in `CAEmitterLayer` again, keeping the drag, sway, fade and 3D
+  tumbling through the emitter's private behaviors (`drag`, `wave`, `valueOverLife`, plane
+  particles with per-particle mass). Falls back to the plain 1.2.0 emitter if those are missing.
+- Launch CPU back to 1.2.0 levels (~60 ms per burst; 1.3.0 was 70–140 ms).
+
 ## [1.3.0] - 2026-11-20
 
 ### Changed

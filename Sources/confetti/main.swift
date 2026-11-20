@@ -157,7 +157,7 @@ struct CLIConfig {
                 printHelp()
                 exit(0)
             case "-v", "--version":
-                print("confetti 1.3.0")
+                print("confetti 1.3.1")
                 exit(0)
             default:
                 fputs("Unknown option: \(args[i])\n", stderr)

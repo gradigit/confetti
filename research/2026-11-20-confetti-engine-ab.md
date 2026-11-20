@@ -107,3 +107,50 @@ animations ~13 ms, idle phase ~0–20 ms (usually flat; cause of occasional tail
 
 WindowServer CPU stayed unusable as a signal (idle measured higher than the engines in runs 4–5).
 Still not verified: external/QHD, multiple screens, ProMotion, GPU power.
+
+## Update (same day, later): 1.3.0 drops frames with several displays → back to the emitter
+
+**Answer:** The baked layer engine shipped in 1.3.0 ran ~12 fps (median, paired per round) below the
+1.2.0-style emitter on a 75 Hz QHD main display with three displays attached (2× QHD at 1×, built-in
+Retina) and a busy compositor (WindowServer ~49% CPU idle, Screen Sharing streaming). On the built-in
+display alone, every engine held ~59.5 fps, including with three overlays at once, so the earlier
+single-screen A/B could not see it. Fix candidate for 1.3.1: `CAEmitterLayer` plus Core Animation's
+private `CAEmitterBehavior` (`drag`, `wave`, `valueOverLife`), plane particles and per-particle mass.
+It keeps the drag/sway/tumble look and runs in the render server like 1.2.0. Its frame rate on the
+three-display setup is **not measured yet** (displays were disconnected before the test).
+
+Measurement: `Prototypes/MetalConfetti/Tools/hitchmeter.swift` (ScreenCaptureKit, main display, all
+pre-existing apps excluded, so only the launched process's windows produce frames; a frame is
+delivered only when content changes, so gaps = missed refreshes). `fps-ab.sh` runs rotated, paired
+rounds. Instruments `xctrace` (Animation Hitches) could not record: "Error connecting to DTServiceHub"
+then a crash, likely Xcode 26.2 on macOS 27.
+
+Results on the three-display setup (fps on the 75 Hz main display; old = Homebrew 1.0.0 emitter,
+rel = 1.3.0, lean = 1.3.0 reworked to one layer per particle, no group, parked off-screen, shared
+start time):
+
+| run | old | rel | lean |
+|---|---|---|---|
+| 8 rounds, paired | 49.0 median | 39.4 | 43.0 |
+| per-round diff vs old | — | −11.6 | −7.7 |
+| 4 rounds, main screen only | 63.4 | — | 58.4 |
+| 4 rounds, ~⅓ fewer particles | 47.1 (old, all) | — | 44.4 |
+
+- Knocking out features (back-face swap, flutter, cubic paths) changed nothing measurable: the cost
+  is per animated layer in the compositor, not any one animation.
+- WindowServer CPU per run did not differ between engines; the cost shows as missed refreshes.
+- 1.3.0 also started each screen's animation before all screens were built (~13 ms per screen), so
+  with three screens the first screens skipped opening frames. Moot with the emitter.
+
+Emitter + private behaviors (checked on this Mac, macOS 27.2.1):
+- `CAEmitterBehavior.behaviorTypes`: wave, drag, alignToMotion, valueOverLife, colorOverLife,
+  light, attractor, simpleAttractor, colorOverDistance, valueOverDistance.
+- Input keys: drag `drag`; wave `force` (vector), `frequency`; valueOverLife `keyPath`, `values`,
+  `locations`, `function`, `additive`. `type` is a method, not a KVC key.
+- Cell private keys: `particleType` (default "sprite"; "plane" gives 3D-oriented particles),
+  `orientationRange/Latitude/Longitude`, `mass`, `massRange`, `rotation`, `rotationRange`.
+- Tuned: drag 2.7, massRange 0.45, wave force 150 at 0.6, emissionRange = 2 × spread (50°), spinRange 8.
+  Screenshots (black backdrop) match the approved look: burst, hang, wide spread, edge-on slivers,
+  staggered fall, fade.
+- CLI: ~60 ms CPU per burst (old 50–60, 1.3.0 70–140), exits 4.76 s (old 5.0 s).
+- Built-in display only: old 59.6 / rel 59.7 / new 59.5 fps (2 rounds) — no difference, as expected.

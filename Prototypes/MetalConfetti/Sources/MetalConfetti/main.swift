@@ -6,6 +6,9 @@ import ConfettiKit
 struct Options {
     var engine = "metal"        // metal | ca | layers | split
     var metalScale: Double?     // drawable pixels per point (default: screen backing scale)
+    var tuning = EmitterXOverlay.Tuning()
+    var opaqueBackground = false
+    var backdrop = false        // opaque black window under the confetti, for screenshots
     var bench = false
     var screenIndex: Int?
     var params = ConfettiSim.Params()
@@ -20,9 +23,18 @@ struct Options {
         while let a = args.next() {
             switch a {
             case "--engine":
-                guard let e = args.next(), ["metal", "ca", "layers", "baked", "split"].contains(e) else { fail("--engine metal|ca|layers|baked|split") }
+                guard let e = args.next(), ["metal", "ca", "layers", "baked", "emitterx", "split"].contains(e) else { fail("--engine metal|ca|layers|baked|emitterx|split") }
                 o.engine = e
             case "--bench": o.bench = true
+            case "--drag": o.tuning.drag = Double(num(a))
+            case "--wave-force": o.tuning.waveForce = Double(num(a))
+            case "--wave-freq": o.tuning.waveFrequency = Double(num(a))
+            case "--spin-range": o.tuning.spinRange = CGFloat(num(a))
+            case "--no-plane": o.tuning.plane = false
+            case "--mass-range": o.tuning.massRange = CGFloat(num(a))
+            case "--spread-scale": o.tuning.spreadScale = CGFloat(num(a))
+            case "--bg": o.opaqueBackground = true
+            case "--backdrop": o.backdrop = true
             case "--metal-scale": o.metalScale = Double(num(a))
             case "--screen": o.screenIndex = Int(num(a))
             case "--count": o.params.perCannon = Int(num(a))
@@ -74,7 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var overlays: [MetalOverlay] = []
     var layerOverlays: [LayerOverlay] = []
     var bakedOverlays: [BakedOverlay] = []
+    var emitterOverlays: [EmitterXOverlay] = []
     var exitTimer: DispatchSourceTimer?
+    var backdrops: [OverlayWindow] = []
     var caWindows: [OverlayWindow] = []
     var pending = 0
     var screenCount = 0
@@ -90,6 +104,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         screenCount = screens.count
+        if options.backdrop {
+            for screen in screens {
+                let w = OverlayWindow(screen: screen)
+                w.isOpaque = true
+                w.backgroundColor = .black
+                w.level = .floating          // below the confetti's .statusBar
+                w.orderFrontRegardless()
+                backdrops.append(w)
+            }
+        }
         stats.fireStart = Date()
         stats.mark("0_launch_done")
         switch options.engine {
@@ -97,6 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "metal": runMetal(screens, cannons: (true, true))
         case "layers": runLayers(screens, cannons: (true, true))
         case "baked": runBaked(screens)
+        case "emitterx": runEmitterX(screens)
         default: runSplit(screens)
         }
     }
@@ -151,6 +176,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         stats.mark("2_overlays_created")
         for o in layerOverlays { o.fire() }
+    }
+
+    // MARK: E — CAEmitterLayer with private drag / wave / fade behaviors
+
+    private func runEmitterX(_ screens: [NSScreen]) {
+        var params = options.params
+        params.colors = paletteBytes()
+        emitterOverlays = screens.map { EmitterXOverlay(screen: $0, stats: stats, tuning: options.tuning, opaqueBackground: options.opaqueBackground) }
+        stats.mark("2_overlays_created")
+        let longest = emitterOverlays.map { $0.fire(params: params) }.max() ?? 0
+        stats.firstCommit = Date()
+        stats.mark("3_committed")
+        pending += 1
+        let t = DispatchSource.makeTimerSource(queue: .main)
+        t.schedule(deadline: .now() + longest, leeway: .milliseconds(1))
+        t.setEventHandler { [weak self] in self?.done() }
+        t.resume()
+        exitTimer = t
     }
 
     // MARK: D — same sim, baked into Core Animation animations, committed once
@@ -210,6 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlays.forEach { $0.close() }
         layerOverlays.forEach { $0.close() }
         bakedOverlays.forEach { $0.close() }
+        emitterOverlays.forEach { $0.close() }
         // Let late GPU-completion and presented handlers land on main before reporting.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [self] in
             if options.bench {

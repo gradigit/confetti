@@ -161,15 +161,19 @@ public final class ConfettiController {
         }
     }
 
-    // MARK: - Cannons (burst engine)
+    // MARK: - Cannons
 
-    /// Simulates each screen's burst up front and commits it as Core Animation animations.
-    /// Returns seconds until the last particle on any screen is gone.
+    /// Fires both corner cannons on every window. Uses `EmitterBurst` (emitter + private drag,
+    /// sway and fade behaviors); falls back to the plain 1.2.0 emitter if those aren't available.
+    /// Returns seconds until the last particle is gone.
     private func addBursts() -> TimeInterval {
+        guard EmitterBurst.isAvailable else {
+            addLegacyCannons()
+            return emissionDuration + TimeInterval(config.lifetime)
+        }
         let params = BurstParameters(config: config, angles: angles, intensity: intensity,
                                      burstWindow: emissionDuration)
-        var rng = SystemRandomNumberGenerator()
-        var longest: TimeInterval = 0
+        guard params.perCannon > 0 else { return 0 }
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -177,18 +181,38 @@ public final class ConfettiController {
             guard let root = window.contentView?.layer else { continue }
             let bounds = root.bounds
             let scale = window.screen?.backingScaleFactor ?? window.backingScaleFactor
-
-            let sim = BurstSimulation(params: params, width: bounds.width, height: bounds.height)
-            sim.fireCannon(from: CGPoint(x: 0, y: 0), aimDegrees: params.leftAimDegrees, using: &rng)
-            sim.fireCannon(from: CGPoint(x: bounds.width, y: 0), aimDegrees: params.rightAimDegrees, using: &rng)
-            let tracks = sim.bake()
-
             let images = ParticleImageCache(
                 maxSizeScale: CGFloat(params.sizeScale * (1 + params.sizeJitter)), screenScale: scale)
-            longest = max(longest, ConfettiBurst.addLayers(for: tracks, to: root, scale: scale, images: images))
+            let cannons: [(CGFloat, Float)] = [(0, params.leftAimDegrees), (bounds.width, params.rightAimDegrees)]
+            for (x, aim) in cannons {
+                let emitter = EmitterBurst.makeCannon(at: CGPoint(x: x, y: -10), aimDegrees: aim, in: bounds,
+                                                      params: params, images: images, screenScale: scale)
+                emitter.beginTime = CACurrentMediaTime()
+                root.addSublayer(emitter)
+                emitters.append(emitter)
+            }
         }
         CATransaction.commit()
-        return longest
+        scheduleEmissionStop()
+        return TimeInterval(params.burstWindow + params.lifeMax)
+    }
+
+    /// The 1.2.0 cannons: plain CAEmitterLayer physics (constant gravity, no drag).
+    private func addLegacyCannons() {
+        for window in windows {
+            guard let layer = window.contentView?.layer else { continue }
+            let bounds = layer.bounds
+            let cannons: [(CGPoint, CGFloat)] = [(CGPoint(x: 0, y: 0), angles.left),
+                                                 (CGPoint(x: bounds.width, y: 0), angles.right)]
+            for (origin, angle) in cannons {
+                let emitter = ConfettiEmitter.createEmitter(at: origin, angle: angle, in: bounds,
+                                                            config: config, intensity: intensity)
+                emitter.beginTime = CACurrentMediaTime()
+                layer.addSublayer(emitter)
+                emitters.append(emitter)
+            }
+        }
+        scheduleEmissionStop()
     }
 
     // MARK: - Curtain (CAEmitterLayer)
@@ -214,7 +238,11 @@ public final class ConfettiController {
             emitters.append(emitter)
         }
 
-        // Stop emission after the emission window (precise timer, see `onComplete`)
+        scheduleEmissionStop()
+    }
+
+    /// Stops all emitters after the emission window (precise timer, see `onComplete`).
+    private func scheduleEmissionStop() {
         stopTimer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + emissionDuration, leeway: .milliseconds(1))

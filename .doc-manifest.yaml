@@ -5,8 +5,8 @@ docs:
     last_updated: "2026-11-20"
     references:
       - Sources/ConfettiKit/ConfettiConfig.swift
-      - Sources/ConfettiKit/BurstSimulation.swift
-      - Sources/ConfettiKit/ConfettiBurst.swift
+      - Sources/ConfettiKit/BurstParameters.swift
+      - Sources/ConfettiKit/EmitterBurst.swift
       - Sources/ConfettiKit/ConfettiEmitter.swift
       - Sources/ConfettiKit/ConfettiController.swift
       - Sources/confetti/main.swift
@@ -17,8 +17,8 @@ docs:
     last_updated: "2026-11-20"
     references:
       - Sources/ConfettiKit/ConfettiConfig.swift
-      - Sources/ConfettiKit/BurstSimulation.swift
-      - Sources/ConfettiKit/ConfettiBurst.swift
+      - Sources/ConfettiKit/BurstParameters.swift
+      - Sources/ConfettiKit/EmitterBurst.swift
       - Sources/ConfettiKit/ConfettiEmitter.swift
       - Sources/ConfettiKit/ConfettiController.swift
       - Sources/ConfettiKit/ConfettiWindow.swift

@@ -10,7 +10,7 @@ Inspired by [Raycast's confetti](https://raycast.com), which only fires on one d
 
 https://github.com/user-attachments/assets/ab8bb451-376f-4753-b5f8-29f6e2e51c18
 
-**New in 1.3.0** -- confetti that moves like paper: air drag, sway and a 3D flip as each piece tumbles. The whole burst is simulated once at launch and handed to Core Animation, so the app does no work while it plays and uses less GPU than 1.2.0 did.
+**New in 1.3.0** -- confetti that moves like paper: air drag, sway and a 3D flip as each piece tumbles. It runs entirely in the system's Core Animation emitter, so the app does no work while it plays.
 
 **1.2.0** added the blizzard preset. Snow piles up, you sweep it away. Runs as a singleton when triggered by Claude Code hooks, so multiple sessions layer different colors of snow instead of fighting over the screen.
 
@@ -21,7 +21,7 @@ https://github.com/user-attachments/assets/1d1fd0de-23fb-4131-ac8a-2002fd468e43
 
 - Multi-monitor: fires on every connected display at once
 - Blizzard mode: snow piles up at the bottom, you can sweep it away with your cursor
-- Real confetti physics: air drag, sway and 3D flutter, pre-computed and handed to Core Animation, so the app does no work per frame (blizzard uses SpriteKit for physics)
+- Real confetti physics: air drag, sway and 3D tumbling, all inside Core Animation's emitter, so the app does no work per frame (blizzard uses SpriteKit for physics)
 - Colors, shapes, and physics are all configurable
 - Works as a Swift package or standalone CLI
 - Zero dependencies
@@ -145,7 +145,7 @@ confetti --presets
 
 ### Blizzard preset (experimental)
 
-The other presets use Core Animation: confetti is simulated once at launch and committed as layer animations, and `snow` uses `CAEmitterLayer`. Blizzard uses SpriteKit instead, which gives it per-particle physics, collision detection, and a scene graph. Heavier, but that's what makes the interactive stuff possible:
+The other presets use Core Animation's `CAEmitterLayer` for fire-and-forget GPU particles (confetti adds drag, sway and tumbling through the emitter's behaviors). Blizzard uses SpriteKit instead, which gives it per-particle physics, collision detection, and a scene graph. Heavier, but that's what makes the interactive stuff possible:
 
 - Snow accumulates into a pile at the bottom of the screen using a height map
 - You can sweep the pile away by moving your mouse cursor through it
@@ -665,8 +665,8 @@ Run `confetti` to verify installation. It exits on its own after the particles f
     │  Confetti Path (CA)     │  │  Blizzard Path (SK)      │
     │                         │  │                          │
     │  ConfettiWindow         │  │  BlizzardWindow          │
-    │  BurstSimulation (bake) │  │  BlizzardScene           │
-    │  ConfettiBurst (layers) │  │  BlizzardSessionLayer(s) │
+    │  EmitterBurst (cannons) │  │  BlizzardScene           │
+    │  BurstParameters        │  │  BlizzardSessionLayer(s) │
     │  ConfettiEmitter (snow) │  │                          │
     │                         │  │  HeightMap               │
     └─────────────────────────┘  │  SKView + physics        │
@@ -682,11 +682,11 @@ Run `confetti` to verify installation. It exits on its own after the particles f
 
 ## Performance
 
-Confetti is simulated once at launch (about 4 ms for a 288-particle burst), then committed to Core Animation as keyframe animations in a single transaction. From then on the app does no work per frame: the system's render server plays the animations, the same way it runs `CAEmitterLayer`. The process exits on a precise timer the moment the last particle is gone. Blizzard is the exception since it needs SpriteKit for per-particle physics and pile interaction. Heavier, but still 60 FPS.
+Confetti runs in Core Animation's `CAEmitterLayer`: the CPU sets up the cannons, then the system's render server simulates and draws every particle, with no per-frame work in the app. The drag, sway, fade and 3D tumbling come from the emitter's built-in behaviors (`CAEmitterBehavior`, an undocumented Core Animation API looked up at runtime; if a future macOS removes it, confetti falls back to the plain 1.2.0 emitter). The process exits on a precise timer the moment the last particle is gone. Blizzard is the exception since it needs SpriteKit for per-particle physics and pile interaction. Heavier, but still 60 FPS.
 
-- Particle images are drawn per colour and shape at the display's pixel scale, once per burst
-- Finished animations stay attached (`isRemovedOnCompletion = false`) so the app isn't woken to remove them
-- Compared with the 1.2.0 `CAEmitterLayer` confetti on an M4 MacBook Air: lower GPU use (11% vs 16% system-wide during the burst, 1% idle), exits 0.3 s sooner, about 30 ms more CPU at launch. Details in `research/2026-11-20-confetti-engine-ab.md`
+- Particle images are drawn per colour and shape at the display's pixel scale
+- 1.3.0 animated one Core Animation layer per particle instead. That kept the app idle but cost the compositor more: with three displays attached it ran ~12 fps below the emitter. 1.3.1 went back to the emitter. Details in `research/2026-11-20-confetti-engine-ab.md`
+- `Prototypes/MetalConfetti/fps-ab.sh` measures real on-screen frame rate between builds
 
 ### Benchmark results
 
