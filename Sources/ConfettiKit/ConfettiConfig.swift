@@ -30,7 +30,11 @@ public enum EmissionStyle {
     case blizzard
 }
 
-/// Configuration for confetti emission
+/// Configuration for confetti emission.
+///
+/// Values are in `CAEmitterCell` units. For `.cannons` (confetti) they're mapped onto the burst
+/// engine's drag-based physics (`BurstParameters`), calibrated so the defaults keep the tuned look;
+/// `scaleSpeed` and `alphaSpeed` apply to `.curtain` (snow) only.
 public struct ConfettiConfig {
     public let birthRate: Float
     public let lifetime: Float

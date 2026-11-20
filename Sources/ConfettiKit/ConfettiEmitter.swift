@@ -18,7 +18,8 @@ public enum ConfettiEmitter {
         return cache
     }()
 
-    private static let fallbackImage: CGImage = {
+    /// 4×4 white texture used when shape drawing fails. Shared with the burst engine.
+    static let fallbackImage: CGImage = {
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         guard let ctx = CGContext(
             data: nil, width: 4, height: 4,

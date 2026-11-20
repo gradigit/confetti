@@ -10,7 +10,9 @@ Inspired by [Raycast's confetti](https://raycast.com), which only fires on one d
 
 https://github.com/user-attachments/assets/ab8bb451-376f-4753-b5f8-29f6e2e51c18
 
-**New in 1.2.0** -- the blizzard preset. Snow piles up, you sweep it away. Runs as a singleton when triggered by Claude Code hooks, so multiple sessions layer different colors of snow instead of fighting over the screen.
+**New in 1.3.0** -- confetti that moves like paper: air drag, sway and a 3D flip as each piece tumbles. The whole burst is simulated once at launch and handed to Core Animation, so the app does no work while it plays and uses less GPU than 1.2.0 did.
+
+**1.2.0** added the blizzard preset. Snow piles up, you sweep it away. Runs as a singleton when triggered by Claude Code hooks, so multiple sessions layer different colors of snow instead of fighting over the screen.
 
 https://github.com/user-attachments/assets/1d1fd0de-23fb-4131-ac8a-2002fd468e43
 
@@ -19,7 +21,7 @@ https://github.com/user-attachments/assets/1d1fd0de-23fb-4131-ac8a-2002fd468e43
 
 - Multi-monitor: fires on every connected display at once
 - Blizzard mode: snow piles up at the bottom, you can sweep it away with your cursor
-- GPU-rendered via Core Animation (blizzard uses SpriteKit for physics)
+- Real confetti physics: air drag, sway and 3D flutter, pre-computed and handed to Core Animation, so the app does no work per frame (blizzard uses SpriteKit for physics)
 - Colors, shapes, and physics are all configurable
 - Works as a Swift package or standalone CLI
 - Zero dependencies
@@ -43,7 +45,7 @@ brew install gradigit/tap/confetti
 Grab the universal binary from [GitHub Releases](https://github.com/gradigit/confetti/releases/latest):
 
 ```bash
-curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.2.0.tar.gz | tar xz
+curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.3.0.tar.gz | tar xz
 mkdir -p ~/.local/bin
 mv confetti ~/.local/bin/
 ```
@@ -65,7 +67,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/gradigit/confetti.git", from: "1.2.0")
+    .package(url: "https://github.com/gradigit/confetti.git", from: "1.3.0")
 ]
 ```
 
@@ -114,6 +116,8 @@ confetti --help
 
 ### Physics flags
 
+These keep their emitter-style units and are mapped onto the drag-based confetti physics (the defaults reproduce the tuned look).
+
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--birth-rate` | Particles per second per cell | 40 |
@@ -141,7 +145,7 @@ confetti --presets
 
 ### Blizzard preset (experimental)
 
-The other presets use Core Animation (`CAEmitterLayer`) for fire-and-forget GPU particles. Blizzard uses SpriteKit instead, which gives it per-particle physics, collision detection, and a scene graph. Heavier, but that's what makes the interactive stuff possible:
+The other presets use Core Animation: confetti is simulated once at launch and committed as layer animations, and `snow` uses `CAEmitterLayer`. Blizzard uses SpriteKit instead, which gives it per-particle physics, collision detection, and a scene graph. Heavier, but that's what makes the interactive stuff possible:
 
 - Snow accumulates into a pile at the bottom of the screen using a height map
 - You can sweep the pile away by moving your mouse cursor through it
@@ -304,8 +308,8 @@ ConfettiConfig(
     spinRange: 20.0,      // Rotation variation
     scale: 0.8,           // Particle size
     scaleRange: 0.2,      // Size variation
-    scaleSpeed: -0.1,      // Scale change over time
-    alphaSpeed: -0.15,    // Fade out speed
+    scaleSpeed: -0.1,     // Scale change over time (snow only)
+    alphaSpeed: -0.15,    // Fade out speed (snow only; confetti fades over its last 0.8 s)
     colors: [...],        // Array of NSColor
     shapes: [...],        // Array of ConfettiShape
     emissionStyle: .cannons // .cannons (corners), .curtain (top edge), or .blizzard (interactive snow)
@@ -560,11 +564,11 @@ Add a "Run Shell Script" action to any workflow:
 brew install gradigit/tap/confetti
 
 # Or direct download
-curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.2.0.tar.gz | tar xz
+curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.3.0.tar.gz | tar xz
 mkdir -p ~/.local/bin && mv confetti ~/.local/bin/
 ```
 
-Verify: `confetti --version` should print `confetti 1.2.0`.
+Verify: `confetti --version` should print `confetti 1.3.0`.
 
 ### Step 2: Setup wizard
 
@@ -653,7 +657,7 @@ Run `confetti` to verify installation. It exits on its own after the particles f
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                    ConfettiController                         │
-│  - Manages windows and emitters across screens               │
+│  - Manages windows, bursts and emitters across screens       │
 │  - Routes to CA or SpriteKit based on emission style         │
 └────────────────┬─────────────────────┬───────────────────────┘
                  │                     │
@@ -661,8 +665,9 @@ Run `confetti` to verify installation. It exits on its own after the particles f
     │  Confetti Path (CA)     │  │  Blizzard Path (SK)      │
     │                         │  │                          │
     │  ConfettiWindow         │  │  BlizzardWindow          │
-    │  ConfettiEmitter        │  │  BlizzardScene           │
-    │  CAEmitterLayer         │  │  BlizzardSessionLayer(s) │
+    │  BurstSimulation (bake) │  │  BlizzardScene           │
+    │  ConfettiBurst (layers) │  │  BlizzardSessionLayer(s) │
+    │  ConfettiEmitter (snow) │  │                          │
     │                         │  │  HeightMap               │
     └─────────────────────────┘  │  SKView + physics        │
                                  └──────────┬───────────────┘
@@ -677,10 +682,11 @@ Run `confetti` to verify installation. It exits on its own after the particles f
 
 ## Performance
 
-Most presets use Core Animation: CPU does setup, GPU handles rendering. Blizzard is the exception since it needs SpriteKit for per-particle physics and pile interaction. Heavier, but still 60 FPS.
+Confetti is simulated once at launch (about 4 ms for a 288-particle burst), then committed to Core Animation as keyframe animations in a single transaction. From then on the app does no work per frame: the system's render server plays the animations, the same way it runs `CAEmitterLayer`. The process exits on a precise timer the moment the last particle is gone. Blizzard is the exception since it needs SpriteKit for per-particle physics and pile interaction. Heavier, but still 60 FPS.
 
-- Particle textures are created once at startup (1,048 bytes total)
-- Emitter layers use `drawsAsynchronously` and `renderMode = .oldestFirst`
+- Particle images are drawn per colour and shape at the display's pixel scale, once per burst
+- Finished animations stay attached (`isRemovedOnCompletion = false`) so the app isn't woken to remove them
+- Compared with the 1.2.0 `CAEmitterLayer` confetti on an M4 MacBook Air: lower GPU use (11% vs 16% system-wide during the burst, 1% idle), exits 0.3 s sooner, about 30 ms more CPU at launch. Details in `research/2026-11-20-confetti-engine-ab.md`
 
 ### Benchmark results
 

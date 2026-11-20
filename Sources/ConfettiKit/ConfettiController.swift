@@ -24,9 +24,18 @@ public final class ConfettiController {
     private var blizzardWindows: [BlizzardWindow] = []
     private var emitters: [CAEmitterLayer] = []
     private var hasFired = false
-    private var stopWorkItem: DispatchWorkItem?
+    private var stopTimer: DispatchSourceTimer?
+    private var completionTimer: DispatchSourceTimer?
 
     private var blizzardCompletedCount = 0
+
+    /// Seconds from `fire()` until the last particle is gone. Set by `fire()`; 0 for blizzard.
+    public private(set) var duration: TimeInterval = 0
+
+    /// Called on the main thread once the confetti (`.cannons`) or snow (`.curtain`) has finished.
+    /// Fires on a precise timer: `asyncAfter` on an idle app runs ~5% late, which kept an empty
+    /// overlay on screen for ~220 ms. Not called for blizzard — use `onBlizzardComplete`.
+    public var onComplete: (() -> Void)?
 
     public let config: ConfettiConfig
     public let angles: CannonAngles
@@ -95,8 +104,16 @@ public final class ConfettiController {
         }
         CATransaction.flush()
 
-        // Add emitters immediately after flush
-        addEmitters()
+        switch config.emissionStyle {
+        case .cannons:
+            duration = addBursts()
+        case .curtain:
+            addCurtainEmitters()
+            duration = emissionDuration + TimeInterval(config.lifetime)
+        case .blizzard:
+            return  // handled above
+        }
+        scheduleCompletion(after: duration)
     }
 
     /// Stops the blizzard gracefully. New snowflakes stop spawning, existing flakes
@@ -144,65 +161,70 @@ public final class ConfettiController {
         }
     }
 
-    private func addEmitters() {
+    // MARK: - Cannons (burst engine)
+
+    /// Simulates each screen's burst up front and commits it as Core Animation animations.
+    /// Returns seconds until the last particle on any screen is gone.
+    private func addBursts() -> TimeInterval {
+        let params = BurstParameters(config: config, angles: angles, intensity: intensity,
+                                     burstWindow: emissionDuration)
+        var rng = SystemRandomNumberGenerator()
+        var longest: TimeInterval = 0
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for window in windows {
+            guard let root = window.contentView?.layer else { continue }
+            let bounds = root.bounds
+            let scale = window.screen?.backingScaleFactor ?? window.backingScaleFactor
+
+            let sim = BurstSimulation(params: params, width: bounds.width, height: bounds.height)
+            sim.fireCannon(from: CGPoint(x: 0, y: 0), aimDegrees: params.leftAimDegrees, using: &rng)
+            sim.fireCannon(from: CGPoint(x: bounds.width, y: 0), aimDegrees: params.rightAimDegrees, using: &rng)
+            let tracks = sim.bake()
+
+            let images = ParticleImageCache(
+                maxSizeScale: CGFloat(params.sizeScale * (1 + params.sizeJitter)), screenScale: scale)
+            longest = max(longest, ConfettiBurst.addLayers(for: tracks, to: root, scale: scale, images: images))
+        }
+        CATransaction.commit()
+        return longest
+    }
+
+    // MARK: - Curtain (CAEmitterLayer)
+
+    private func addCurtainEmitters() {
         for window in windows {
             guard let layer = window.contentView?.layer else { continue }
             let bounds = layer.bounds
 
-            switch config.emissionStyle {
-            case .cannons:
-                // Left cannon (bottom-left corner, firing up)
-                let left = ConfettiEmitter.createEmitter(
-                    at: CGPoint(x: 0, y: 0),
-                    angle: angles.left,
-                    in: bounds,
-                    config: config,
-                    intensity: intensity
-                )
-                left.beginTime = CACurrentMediaTime()
-                layer.addSublayer(left)
-                emitters.append(left)
-
-                // Right cannon (bottom-right corner, firing up)
-                let right = ConfettiEmitter.createEmitter(
-                    at: CGPoint(x: bounds.width, y: 0),
-                    angle: angles.right,
-                    in: bounds,
-                    config: config,
-                    intensity: intensity
-                )
-                right.beginTime = CACurrentMediaTime()
-                layer.addSublayer(right)
-                emitters.append(right)
-
-            case .curtain:
-                // Line emitter across top edge, particles fall down
-                let emitter = ConfettiEmitter.createEmitter(
-                    at: CGPoint(x: bounds.width / 2, y: bounds.height),
-                    angle: 0,  // along line's inward normal = downward
-                    in: bounds,
-                    config: config,
-                    intensity: intensity
-                )
-                emitter.emitterShape = .line
-                emitter.emitterSize = CGSize(width: bounds.width, height: 1)
-                emitter.emitterMode = .outline
-                emitter.beginTime = CACurrentMediaTime()
-                layer.addSublayer(emitter)
-                emitters.append(emitter)
-
-            case .blizzard:
-                break  // Blizzard uses SpriteKit, never reaches here
-            }
+            // Line emitter across top edge, particles fall down
+            let emitter = ConfettiEmitter.createEmitter(
+                at: CGPoint(x: bounds.width / 2, y: bounds.height),
+                angle: 0,  // along line's inward normal = downward
+                in: bounds,
+                config: config,
+                intensity: intensity
+            )
+            emitter.emitterShape = .line
+            emitter.emitterSize = CGSize(width: bounds.width, height: 1)
+            emitter.emitterMode = .outline
+            emitter.beginTime = CACurrentMediaTime()
+            layer.addSublayer(emitter)
+            emitters.append(emitter)
         }
 
-        // Stop emission after burst
-        stopWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
+        // Stop emission after the emission window (precise timer, see `onComplete`)
+        stopTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + emissionDuration, leeway: .milliseconds(1))
+        timer.setEventHandler { [weak self] in
+            self?.stopTimer?.cancel()
+            self?.stopTimer = nil
             self?.stopEmission()
         }
-        stopWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + emissionDuration, execute: workItem)
+        stopTimer = timer
+        timer.resume()
     }
 
     private func stopEmission() {
@@ -212,11 +234,29 @@ public final class ConfettiController {
         }
     }
 
+    private func scheduleCompletion(after seconds: TimeInterval) {
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + max(seconds, 0), leeway: .milliseconds(1))
+        timer.setEventHandler { [weak self] in
+            self?.completionTimer?.cancel()
+            self?.completionTimer = nil
+            self?.onComplete?()
+        }
+        completionTimer = timer
+        timer.resume()
+    }
+
     /// Removes all windows and cleans up
     public func cleanup() {
         dispatchPrecondition(condition: .onQueue(.main))
-        stopWorkItem?.cancel()
-        stopWorkItem = nil
+        stopTimer?.cancel()
+        stopTimer = nil
+        completionTimer?.cancel()
+        completionTimer = nil
+        duration = 0
+        for window in windows {
+            window.contentView?.layer?.sublayers?.forEach { $0.removeFromSuperlayer() }
+        }
         for emitter in emitters {
             emitter.removeFromSuperlayer()
         }

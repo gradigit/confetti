@@ -157,7 +157,7 @@ struct CLIConfig {
                 printHelp()
                 exit(0)
             case "-v", "--version":
-                print("confetti 1.2.0")
+                print("confetti 1.3.0")
                 exit(0)
             default:
                 fputs("Unknown option: \(args[i])\n", stderr)
@@ -275,6 +275,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var controller: ConfettiController?
     var coordinator: BlizzardCoordinator?
     var transcriptWatcher: TranscriptWatcher?
+    var exitTimer: DispatchSourceTimer?
     var cliConfig = CLIConfig()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -367,6 +368,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             intensity: cliConfig.intensity,
             windowLevel: windowLevel
         )
+        if cliConfig.duration == nil {
+            // Exit as soon as the last particle is gone
+            controller?.onComplete = { [weak self] in
+                self?.controller?.cleanup()
+                NSApp.terminate(nil)
+            }
+        }
         controller?.fire(on: screens)
 
         // Non-blizzard --stop-on-modify: watch file and exit on change
@@ -378,12 +386,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Exit after specified duration, or wait for all particles to finish
-        let autoDuration = emissionDuration + Double(config.lifetime)
-        let exitDuration = cliConfig.duration ?? autoDuration
-        DispatchQueue.main.asyncAfter(deadline: .now() + exitDuration) { [weak self] in
-            self?.controller?.cleanup()
-            NSApp.terminate(nil)
+        // Explicit --duration overrides the automatic exit. Precise timer: asyncAfter on an idle
+        // app fires ~5% late, which kept an empty overlay up for a few hundred ms.
+        if let duration = cliConfig.duration {
+            let timer = DispatchSource.makeTimerSource(queue: .main)
+            timer.schedule(deadline: .now() + duration, leeway: .milliseconds(1))
+            timer.setEventHandler { [weak self] in
+                self?.controller?.cleanup()
+                NSApp.terminate(nil)
+            }
+            timer.resume()
+            exitTimer = timer
         }
     }
 

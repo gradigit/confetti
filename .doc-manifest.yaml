@@ -1,10 +1,12 @@
-last_synced: "2026-02-01"
+last_synced: "2026-11-20"
 docs:
   - path: README.md
     type: readme
-    last_updated: "2026-02-01"
+    last_updated: "2026-11-20"
     references:
       - Sources/ConfettiKit/ConfettiConfig.swift
+      - Sources/ConfettiKit/BurstSimulation.swift
+      - Sources/ConfettiKit/ConfettiBurst.swift
       - Sources/ConfettiKit/ConfettiEmitter.swift
       - Sources/ConfettiKit/ConfettiController.swift
       - Sources/confetti/main.swift
@@ -12,9 +14,11 @@ docs:
       - Package.swift
   - path: CLAUDE.md
     type: project-instructions
-    last_updated: "2026-02-01"
+    last_updated: "2026-11-20"
     references:
       - Sources/ConfettiKit/ConfettiConfig.swift
+      - Sources/ConfettiKit/BurstSimulation.swift
+      - Sources/ConfettiKit/ConfettiBurst.swift
       - Sources/ConfettiKit/ConfettiEmitter.swift
       - Sources/ConfettiKit/ConfettiController.swift
       - Sources/ConfettiKit/ConfettiWindow.swift
@@ -23,7 +27,7 @@ docs:
       - Sources/benchmark/main.swift
   - path: CHANGELOG.md
     type: changelog
-    last_updated: "2026-02-01"
+    last_updated: "2026-11-20"
     references:
       - Sources/ConfettiKit/ConfettiConfig.swift
       - Sources/ConfettiKit/ConfettiController.swift

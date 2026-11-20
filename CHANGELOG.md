@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.3.0] - 2026-11-20
+
+### Changed
+- Confetti presets (default, subtle, intense, fireworks) use a new burst engine instead of
+  `CAEmitterLayer`: velocity-proportional air drag, sideways sway, and a 3D flip with a darker
+  back face. The burst is simulated once at launch (~4 ms) and committed to Core Animation as
+  keyframe animations, so the app does no per-frame work.
+- Lower GPU use than 1.2.0 (11% vs 16% system-wide during a default burst on an M4 MacBook Air)
+  and the overlay exits ~0.3 s sooner. About 30 ms more CPU at launch.
+- Existing physics flags and config-file fields keep working; they're mapped onto the new physics,
+  calibrated so the defaults keep the same overall look. `scaleSpeed` and `alphaSpeed` now apply to
+  `snow` only.
+
+### Added
+- `ConfettiController.onComplete` and `duration`: completion fires when the last particle is gone.
+
+### Fixed
+- Overlays stayed up a few hundred ms after the animation ended: `asyncAfter` on an idle app fires
+  ~5% late. Exit, `--duration` and the snow emission stop now use precise timers.
+- Particle size depended on the main display's scale (2× design size on Retina). Burst images are
+  drawn at the target display's pixel scale.
+
 ## [1.0.0] - 2026-01-31
 
 ### Added
