@@ -166,3 +166,27 @@ rounds with rotated order (`fps-ab.sh 8`); new = emitter + private behaviors (1.
 
 - Per-round diff vs old: rel −8.4 median (−11.6 … +1.4), new +2.1 median (−7.8 … +11.5).
 - The new engine is level with the old emitter, so it shipped as 1.3.1.
+
+2026-11-27, restoring the paper look on the emitter (Henry: "it doesnt look as good tho. looks less like
+real confetti"). Cause: 1.3.1 had no per-piece flip, no darker back face, and one shared sway.
+
+- `CAEmitterCell` has private sprite-sheet properties: `contentsFrameCount`, `contentsFramesPerRow`,
+  `contentsFrameMode` (default "single"; "random" found next to it in QuartzCore's strings),
+  `contentsFramesPerSecond`. Tested on a black probe window:
+  - Set `contentsRect` to one frame (width 1/N); with the full rect nothing renders.
+  - Frames advance by particle age at `contentsFramesPerSecond` and loop.
+  - "single" starts every particle on frame 0; "random" starts each on a random frame, then
+    advances (most pieces moved forward exactly one frame in 0.35 s at 2 fps). That gives a
+    per-piece flip phase.
+  - With fps 0, "random" rendered nothing.
+- `CAEmitterCell` also has its own `emitterBehaviors`, so each flip-speed group gets its own `wave`
+  frequency. How `wave` varies across particles is still unknown: a stationary-particle probe
+  rendered nothing even with the wave off, so the probe was broken, not the behavior.
+- The flip strip is 24 frames: width × |cos θ|, back half shaded 0.6, played at 0.8 / 1.3 / 1.9 flips
+  per second (one cell group each), sway 0.55 / 0.8 / 1.05 Hz at about ±15 pt. Sprite particles, spin ±5 rad/s.
+- Matching 1.3.0's layout: pixel percentiles (x and y, 10/50/90) at 0.3–3.2 s, folded onto one cannon,
+  scored against the `baked` engine. The prototype aimed 10° inward, but the library (1.3.0 and 1.3.1)
+  aims 5° inward, so the reference was rerun with `--inward 5`. Two `baked` runs differ by 0.72.
+  Library flip build: 1.02 (n=3). Drag 2.7 with mass range 0.45 is best (3.1 or 0.25 score 1.4–1.9).
+  Spread factor 1.4–2.0 is within noise; the library uses 1.7.
+- Frame rate not yet measured on three displays: the LG monitors were disconnected.

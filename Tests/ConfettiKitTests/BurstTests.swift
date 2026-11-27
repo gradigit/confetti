@@ -25,7 +25,7 @@ final class BurstTests: XCTestCase {
         XCTAssertEqual(p.spreadDegrees, 25, accuracy: 0.01)
         XCTAssertEqual(p.sizeScale, 1.6, accuracy: 0.001)
         XCTAssertEqual(p.sizeJitter, 0.25, accuracy: 0.001)
-        XCTAssertEqual(p.maxSpin, 8, accuracy: 0.001)
+        XCTAssertEqual(p.maxSpin, 5, accuracy: 0.001)
         XCTAssertEqual(p.lifeMax, 4.5, accuracy: 0.001)
         XCTAssertEqual(p.lifeMin, 3.5, accuracy: 0.001)
         XCTAssertEqual(p.colors.count, 8)
@@ -51,11 +51,16 @@ final class BurstTests: XCTestCase {
         XCTAssertTrue(EmitterBurst.isAvailable, "CAEmitterBehavior missing: confetti will use the 1.2.0 emitter")
     }
 
-    func testCannonCellsCoverEveryColourAndShape() throws {
-        try XCTSkipUnless(EmitterBurst.isAvailable)
+    func testFlipFramesAvailable() {
+        // Without them pieces fall back to 3D plane particles (no flip strip, no darker back).
+        XCTAssertTrue(EmitterBurst.flipAvailable, "emitter sprite-sheet frames missing: no paper flip")
+    }
+
+    func testCannonCellsCoverEveryColourShapeAndFlipSpeed() throws {
+        try XCTSkipUnless(EmitterBurst.isAvailable && EmitterBurst.flipAvailable)
         let p = params()
         let e = cannon(p)
-        XCTAssertEqual(e.emitterCells?.count, p.colors.count * p.shapes.count)
+        XCTAssertEqual(e.emitterCells?.count, p.colors.count * p.shapes.count * p.flipSpeeds.count)
         // Total birth rate over the burst window releases perCannon particles
         let total = (e.emitterCells ?? []).reduce(Float(0)) { $0 + $1.birthRate } * p.burstWindow
         XCTAssertEqual(total, Float(p.perCannon), accuracy: 0.5)
@@ -67,29 +72,47 @@ final class BurstTests: XCTestCase {
         let cell = try XCTUnwrap(cannon(p, height: 956).emitterCells?.first)
         XCTAssertEqual(cell.velocity, CGFloat(p.speedMin + p.speedMax) / 2, accuracy: 0.5)
         XCTAssertEqual(cell.yAcceleration, -900, accuracy: 0.01)
-        XCTAssertEqual(cell.emissionRange, 50 * .pi / 180, accuracy: 1e-4)
+        XCTAssertEqual(cell.emissionRange, 25 * 1.7 * .pi / 180, accuracy: 1e-4)
         XCTAssertEqual(cell.lifetime + cell.lifetimeRange, p.lifeMax, accuracy: 1e-4)
-        XCTAssertEqual(cell.value(forKey: "particleType") as? String, "plane")
         XCTAssertEqual(cell.contentsScale, 2)
         // Launch speed scales with screen height so the burst fills any screen the same way
         let tall = try XCTUnwrap(cannon(p, height: 1912).emitterCells?.first)
         XCTAssertEqual(tall.velocity, cell.velocity * 2, accuracy: 0.5)
     }
 
-    func testCannonCarriesDragSwayAndFade() throws {
-        try XCTSkipUnless(EmitterBurst.isAvailable)
+    // `type` is a plain method; the behavior class's KVC only exposes its input keys
+    private func type(_ b: NSObject) -> String? { b.perform(NSSelectorFromString("type"))?.takeUnretainedValue() as? String }
+
+    func testCannonCarriesDragAndFade() throws {
+        try XCTSkipUnless(EmitterBurst.isAvailable && EmitterBurst.flipAvailable)
         let behaviors = try XCTUnwrap(cannon(params()).value(forKey: "emitterBehaviors") as? [NSObject])
-        // `type` is a plain method; the class's KVC only exposes its input keys
-        func type(_ b: NSObject) -> String? { b.perform(NSSelectorFromString("type"))?.takeUnretainedValue() as? String }
-        XCTAssertEqual(Set(behaviors.compactMap(type)), ["drag", "wave", "valueOverLife"])
+        XCTAssertEqual(Set(behaviors.compactMap(type)), ["drag", "valueOverLife"])
         let drag = try XCTUnwrap(behaviors.first { type($0) == "drag" })
         XCTAssertEqual((drag.value(forKey: "drag") as? NSNumber)?.doubleValue ?? 0, 2.7, accuracy: 1e-4)
+    }
+
+    func testCellsFlipAtTheirGroupSpeedAndSway() throws {
+        try XCTSkipUnless(EmitterBurst.isAvailable && EmitterBurst.flipAvailable)
+        let p = params()
+        let cells = try XCTUnwrap(cannon(p).emitterCells)
+        for (i, c) in cells.prefix(p.flipSpeeds.count).enumerated() {
+            XCTAssertEqual(c.value(forKey: "particleType") as? String, "sprite")
+            XCTAssertEqual((c.value(forKey: "contentsFrameCount") as? NSNumber)?.intValue, p.flipFrames)
+            XCTAssertEqual(c.value(forKey: "contentsFrameMode") as? String, "random")
+            XCTAssertEqual((c.value(forKey: "contentsFramesPerSecond") as? NSNumber)?.doubleValue ?? 0,
+                           Double(p.flipSpeeds[i]) * Double(p.flipFrames), accuracy: 1e-3)
+            XCTAssertEqual(c.contentsRect.width, 1 / CGFloat(p.flipFrames), accuracy: 1e-6)
+            let wave = try XCTUnwrap((c.value(forKey: "emitterBehaviors") as? [NSObject])?.first)
+            XCTAssertEqual(type(wave), "wave")
+            XCTAssertEqual((wave.value(forKey: "frequency") as? NSNumber)?.doubleValue ?? 0,
+                           Double(p.swayFrequencies[i]), accuracy: 1e-4)
+        }
     }
 
     func testOnlyConfiguredShapesAndColors() throws {
         try XCTSkipUnless(EmitterBurst.isAvailable)
         let p = params(ConfettiConfig(colors: [.systemRed], shapes: [.circle]))
-        XCTAssertEqual(cannon(p).emitterCells?.count, 1)
+        XCTAssertEqual(cannon(p).emitterCells?.count, EmitterBurst.flipAvailable ? p.flipSpeeds.count : 1)
     }
 
     // MARK: - Images
@@ -100,6 +123,15 @@ final class BurstTests: XCTestCase {
         XCTAssertEqual(img.width, 56)    // 14 pt × 2 × 2
         XCTAssertEqual(img.height, 28)
         XCTAssertTrue(img === cache.image(color: SIMD3(255, 0, 0), shape: .rectangle))
+    }
+
+    func testFlipStripHasOneFramePerStep() {
+        let cache = ParticleImageCache(maxSizeScale: 2, screenScale: 2)
+        let strip = cache.flipStrip(color: SIMD3(255, 0, 0), shape: .rectangle, frames: 24, backShade: 0.6)
+        XCTAssertEqual(strip.width, 56 * 24)
+        XCTAssertEqual(strip.height, 28)
+        XCTAssertTrue(strip === cache.flipStrip(color: SIMD3(255, 0, 0), shape: .rectangle, frames: 24, backShade: 0.6))
+        XCTAssertFalse(strip === cache.image(color: SIMD3(255, 0, 0), shape: .rectangle))
     }
 
     // MARK: - End to end

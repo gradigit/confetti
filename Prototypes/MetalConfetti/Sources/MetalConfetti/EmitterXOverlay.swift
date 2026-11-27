@@ -19,6 +19,15 @@ final class EmitterXOverlay {
         var spinRange: CGFloat = 8
         var massRange: CGFloat = 0
         var spreadScale: CGFloat = 1
+        var speedScale: CGFloat = 1
+        /// Paper flip as a sprite strip: each frame is the piece turned a little further about its
+        /// own axis (width = |cos θ|, back face darker). The emitter plays the strip by particle
+        /// age from a random starting frame (private `contentsFrameMode = "random"`), so every
+        /// piece flips at its own phase. One cell per speed in `flipSpeeds` (flips per second).
+        var flip = false
+        var flipFrames = 24
+        var flipSpeeds: [Double] = [0.7, 1.2, 1.8]
+        var backShade: CGFloat = 0.6
     }
 
     let window: OverlayWindow
@@ -49,8 +58,11 @@ final class EmitterXOverlay {
 
         let lifetime = (params.lifeMin + params.lifeMax) / 2
         let lifetimeRange = (params.lifeMax - params.lifeMin) / 2
-        let speedScale = CGFloat(size.height / 956)
+        let speedScale = CGFloat(size.height / 956) * tuning.speedScale
         let images = ParticleImageCache(sizeScale: CGFloat(params.sizeScale * 1.25), screenScale: scale)
+        let plane = tuning.plane && !tuning.flip
+        let speeds = tuning.flip ? tuning.flipSpeeds : [0]
+        let cellCount = params.colors.count * 3 * speeds.count
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -60,16 +72,26 @@ final class EmitterXOverlay {
             e.emitterPosition = CGPoint(x: x, y: -10)
             e.emitterShape = .point
             e.renderMode = .oldestFirst
-            if tuning.plane { e.preservesDepth = true }
+            if plane { e.preservesDepth = true }
             e.beginTime = CACurrentMediaTime()
 
             var cells: [CAEmitterCell] = []
             for color in params.colors {
-                for shape in 0..<3 {
+                for shape in 0..<3 { for speed in speeds {
                     let c = CAEmitterCell()
-                    c.contents = images.image(color: color, shape: shape)
+                    if tuning.flip {
+                        let n = tuning.flipFrames
+                        c.contents = images.flipStrip(color: color, shape: shape, frames: n, backShade: tuning.backShade)
+                        c.contentsRect = CGRect(x: 0, y: 0, width: 1 / CGFloat(n), height: 1)
+                        c.setValue(n, forKey: "contentsFrameCount")
+                        c.setValue(n, forKey: "contentsFramesPerRow")
+                        c.setValue("random", forKey: "contentsFrameMode")
+                        c.setValue(speed * Double(n), forKey: "contentsFramesPerSecond")
+                    } else {
+                        c.contents = images.image(color: color, shape: shape)
+                    }
                     c.contentsScale = scale
-                    c.birthRate = Float(params.perCannon) / Float(params.burstWindow) / Float(params.colors.count * 3)
+                    c.birthRate = Float(params.perCannon) / Float(params.burstWindow) / Float(cellCount)
                     c.lifetime = lifetime
                     c.lifetimeRange = lifetimeRange
                     c.velocity = CGFloat(params.speedMin + params.speedMax) / 2 * speedScale
@@ -82,14 +104,14 @@ final class EmitterXOverlay {
                     c.spinRange = tuning.spinRange
                     c.scale = 1 / 1.25          // images are drawn at the largest size
                     c.scaleRange = 0.25 / 1.25
-                    if tuning.plane {
+                    if plane {
                         c.setValue("plane", forKey: "particleType")
                         c.setValue(CGFloat.pi, forKey: "orientationRange")
                         c.setValue(CGFloat.pi / 2, forKey: "orientationLongitude")
                         c.setValue(CGFloat.pi / 2, forKey: "orientationLatitude")
                     }
                     cells.append(c)
-                }
+                } }
             }
             e.emitterCells = cells
 
@@ -148,6 +170,41 @@ final class EmitterXOverlay {
 final class ParticleImageCache {
     private let k: CGFloat
     init(sizeScale: CGFloat, screenScale: CGFloat) { k = sizeScale * screenScale }
+
+    private static func baseSize(_ shape: Int) -> CGSize {
+        shape == 0 ? CGSize(width: 14, height: 7) : shape == 1 ? CGSize(width: 10, height: 10) : CGSize(width: 8, height: 8)
+    }
+
+    private static func addShape(_ ctx: CGContext, _ shape: Int, in r: CGRect, k: CGFloat) {
+        switch shape {
+        case 0: ctx.addPath(CGPath(roundedRect: r, cornerWidth: min(k, r.height / 2, r.width / 2), cornerHeight: min(k, r.height / 2, r.width / 2), transform: nil))
+        case 1:
+            ctx.move(to: CGPoint(x: r.midX, y: r.maxY)); ctx.addLine(to: CGPoint(x: r.minX, y: r.minY))
+            ctx.addLine(to: CGPoint(x: r.maxX, y: r.minY)); ctx.closePath()
+        default: ctx.addEllipse(in: r)
+        }
+    }
+
+    /// `frames` copies of the shape side by side, turning about the vertical axis through one full
+    /// flip: width × |cos θ|, darker while the back faces the viewer.
+    func flipStrip(color: SIMD3<UInt8>, shape: Int, frames: Int, backShade: CGFloat) -> CGImage {
+        let base = Self.baseSize(shape)
+        let w = Int((base.width * k).rounded(.up)), h = Int((base.height * k).rounded(.up))
+        let ctx = CGContext(data: nil, width: w * frames, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        for f in 0..<frames {
+            let c = cos(2 * Double.pi * Double(f) / Double(frames))
+            let shade = c >= 0 ? 1 : backShade
+            ctx.setFillColor(red: CGFloat(color.x) / 255 * shade, green: CGFloat(color.y) / 255 * shade,
+                             blue: CGFloat(color.z) / 255 * shade, alpha: 1)
+            let fw = max(1, CGFloat(w) * CGFloat(abs(c)))
+            let r = CGRect(x: CGFloat(f * w) + (CGFloat(w) - fw) / 2, y: 0, width: fw, height: CGFloat(h))
+            Self.addShape(ctx, shape, in: r, k: k)
+            ctx.fillPath()
+        }
+        return ctx.makeImage()!
+    }
 
     func image(color: SIMD3<UInt8>, shape: Int) -> CGImage {
         let base: CGSize = shape == 0 ? CGSize(width: 14, height: 7) : shape == 1 ? CGSize(width: 10, height: 10) : CGSize(width: 8, height: 8)

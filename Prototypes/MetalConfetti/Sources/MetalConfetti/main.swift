@@ -9,6 +9,7 @@ struct Options {
     var tuning = EmitterXOverlay.Tuning()
     var opaqueBackground = false
     var backdrop = false        // opaque black window under the confetti, for screenshots
+    var snapDir: String?        // with --backdrop: PNGs of this app's own windows only (main screen)
     var bench = false
     var screenIndex: Int?
     var params = ConfettiSim.Params()
@@ -31,8 +32,18 @@ struct Options {
             case "--wave-freq": o.tuning.waveFrequency = Double(num(a))
             case "--spin-range": o.tuning.spinRange = CGFloat(num(a))
             case "--no-plane": o.tuning.plane = false
+            case "--flip": o.tuning.flip = true; o.tuning.spinRange = 5
+            case "--flip-frames": o.tuning.flipFrames = Int(num(a))
+            case "--flip-speeds":
+                guard let v = args.next() else { fail("--flip-speeds a,b,c") }
+                o.tuning.flipSpeeds = v.split(separator: ",").compactMap { Double($0) }
+            case "--back-shade": o.tuning.backShade = CGFloat(num(a))
+            case "--snap":
+                guard let v = args.next() else { fail("--snap DIR") }
+                o.snapDir = v
             case "--mass-range": o.tuning.massRange = CGFloat(num(a))
             case "--spread-scale": o.tuning.spreadScale = CGFloat(num(a))
+            case "--speed-scale": o.tuning.speedScale = CGFloat(num(a))
             case "--bg": o.opaqueBackground = true
             case "--backdrop": o.backdrop = true
             case "--metal-scale": o.metalScale = Double(num(a))
@@ -45,6 +56,7 @@ struct Options {
             case "--speed-min": o.params.speedMin = num(a)
             case "--speed-max": o.params.speedMax = num(a)
             case "--spread": o.params.spreadDeg = num(a)
+            case "--inward": o.params.inwardDeg = num(a)
             case "--burst-window": o.params.burstWindow = num(a)
             case "-h", "--help":
                 print("""
@@ -113,6 +125,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 w.orderFrontRegardless()
                 backdrops.append(w)
             }
+        }
+        if let dir = options.snapDir, options.backdrop {
+            Snap.schedule(dir: dir, times: [0.3, 0.7, 1.3, 2.2, 3.2], label: options.engine + (options.tuning.flip ? "-flip" : ""))
         }
         stats.fireStart = Date()
         stats.mark("0_launch_done")
