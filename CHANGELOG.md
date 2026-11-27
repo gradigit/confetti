@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.3.1] - unreleased
+## [1.3.1] - 2026-11-27
 
 ### Fixed
 - Frame drops with several displays attached. 1.3.0 animated one Core Animation layer per

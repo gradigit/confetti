@@ -154,3 +154,15 @@ Emitter + private behaviors (checked on this Mac, macOS 27.2.1):
   staggered fall, fade.
 - CLI: ~60 ms CPU per burst (old 50–60, 1.3.0 70–140), exits 4.76 s (old 5.0 s).
 - Built-in display only: old 59.6 / rel 59.7 / new 59.5 fps (2 rounds) — no difference, as expected.
+
+2026-11-27, three displays reconnected (LG HDR QHD 75 Hz main, LG IPS QHD 60 Hz, built-in), 8 paired
+rounds with rotated order (`fps-ab.sh 8`); new = emitter + private behaviors (1.3.1):
+
+| engine | fps median | missed refreshes (median) | worst gap ms |
+|---|---|---|---|
+| old (1.0.0 emitter) | 53.6 | 125 | 80.0 |
+| rel (1.3.0 layers) | 46.0 | 166 | 93.4 |
+| new (1.3.1 emitter + behaviors) | 54.5 | 118 | 80.0 |
+
+- Per-round diff vs old: rel −8.4 median (−11.6 … +1.4), new +2.1 median (−7.8 … +11.5).
+- The new engine is level with the old emitter, so it shipped as 1.3.1.

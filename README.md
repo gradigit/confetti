@@ -10,7 +10,7 @@ Inspired by [Raycast's confetti](https://raycast.com), which only fires on one d
 
 https://github.com/user-attachments/assets/ab8bb451-376f-4753-b5f8-29f6e2e51c18
 
-**New in 1.3.0** -- confetti that moves like paper: air drag, sway and a 3D flip as each piece tumbles. It runs entirely in the system's Core Animation emitter, so the app does no work while it plays.
+**New in 1.3.x** -- confetti that moves like paper: air drag, sway and a 3D flip as each piece tumbles. It runs entirely in the system's Core Animation emitter, so the app does no work while it plays.
 
 **1.2.0** added the blizzard preset. Snow piles up, you sweep it away. Runs as a singleton when triggered by Claude Code hooks, so multiple sessions layer different colors of snow instead of fighting over the screen.
 
@@ -45,7 +45,7 @@ brew install gradigit/tap/confetti
 Grab the universal binary from [GitHub Releases](https://github.com/gradigit/confetti/releases/latest):
 
 ```bash
-curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.3.0.tar.gz | tar xz
+curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.3.1.tar.gz | tar xz
 mkdir -p ~/.local/bin
 mv confetti ~/.local/bin/
 ```
@@ -67,7 +67,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/gradigit/confetti.git", from: "1.3.0")
+    .package(url: "https://github.com/gradigit/confetti.git", from: "1.3.1")
 ]
 ```
 
@@ -564,11 +564,11 @@ Add a "Run Shell Script" action to any workflow:
 brew install gradigit/tap/confetti
 
 # Or direct download
-curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.3.0.tar.gz | tar xz
+curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.3.1.tar.gz | tar xz
 mkdir -p ~/.local/bin && mv confetti ~/.local/bin/
 ```
 
-Verify: `confetti --version` should print `confetti 1.3.0`.
+Verify: `confetti --version` should print `confetti 1.3.1`.
 
 ### Step 2: Setup wizard
 
