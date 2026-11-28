@@ -10,7 +10,7 @@ Inspired by [Raycast's confetti](https://raycast.com), which only fires on one d
 
 https://github.com/user-attachments/assets/ab8bb451-376f-4753-b5f8-29f6e2e51c18
 
-**New in 1.3.x** -- confetti that moves like paper: air drag, sway and a 3D flip as each piece tumbles. It runs entirely in the system's Core Animation emitter, so the app does no work while it plays.
+**New in 1.3.x** -- confetti that moves like paper: air drag, sway, and a flip with a darker back as each piece turns over. It runs entirely in the system's Core Animation emitter, so the app does no work while it plays.
 
 **1.2.0** added the blizzard preset. Snow piles up, you sweep it away. Runs as a singleton when triggered by Claude Code hooks, so multiple sessions layer different colors of snow instead of fighting over the screen.
 
@@ -45,7 +45,7 @@ brew install gradigit/tap/confetti
 Grab the universal binary from [GitHub Releases](https://github.com/gradigit/confetti/releases/latest):
 
 ```bash
-curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.3.1.tar.gz | tar xz
+curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.3.2.tar.gz | tar xz
 mkdir -p ~/.local/bin
 mv confetti ~/.local/bin/
 ```
@@ -67,7 +67,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/gradigit/confetti.git", from: "1.3.1")
+    .package(url: "https://github.com/gradigit/confetti.git", from: "1.3.2")
 ]
 ```
 
@@ -564,11 +564,11 @@ Add a "Run Shell Script" action to any workflow:
 brew install gradigit/tap/confetti
 
 # Or direct download
-curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.3.1.tar.gz | tar xz
+curl -sL https://github.com/gradigit/confetti/releases/latest/download/confetti-1.3.2.tar.gz | tar xz
 mkdir -p ~/.local/bin && mv confetti ~/.local/bin/
 ```
 
-Verify: `confetti --version` should print `confetti 1.3.1`.
+Verify: `confetti --version` should print `confetti 1.3.2`.
 
 ### Step 2: Setup wizard
 
@@ -682,10 +682,10 @@ Run `confetti` to verify installation. It exits on its own after the particles f
 
 ## Performance
 
-Confetti runs in Core Animation's `CAEmitterLayer`: the CPU sets up the cannons, then the system's render server simulates and draws every particle, with no per-frame work in the app. The drag, sway, fade and 3D tumbling come from the emitter's built-in behaviors (`CAEmitterBehavior`, an undocumented Core Animation API looked up at runtime; if a future macOS removes it, confetti falls back to the plain 1.2.0 emitter). The process exits on a precise timer the moment the last particle is gone. Blizzard is the exception since it needs SpriteKit for per-particle physics and pile interaction. Heavier, but still 60 FPS.
+Confetti runs in Core Animation's `CAEmitterLayer`: the CPU sets up the cannons, then the system's render server simulates and draws every particle, with no per-frame work in the app. The drag, sway and fade come from the emitter's built-in behaviors (`CAEmitterBehavior`), and the paper flip from its sprite-sheet frames: each piece plays a flip strip from a random starting frame. Both are undocumented Core Animation APIs looked up at runtime; if a future macOS removes them, confetti falls back to 3D tumbling or the plain 1.2.0 emitter. The process exits on a precise timer the moment the last particle is gone. Blizzard is the exception since it needs SpriteKit for per-particle physics and pile interaction. Heavier, but still 60 FPS.
 
 - Particle images are drawn per colour and shape at the display's pixel scale
-- 1.3.0 animated one Core Animation layer per particle instead. That kept the app idle but cost the compositor more: with three displays attached it ran ~12 fps below the emitter. 1.3.1 went back to the emitter. Details in `research/2026-11-20-confetti-engine-ab.md`
+- 1.3.0 animated one Core Animation layer per particle instead. That kept the app idle but cost the compositor more: with three displays attached it ran ~12 fps below the emitter. 1.3.1 went back to the emitter; 1.3.2 restored the per-piece flip inside it. Details in `research/2026-11-20-confetti-engine-ab.md`
 - `Prototypes/MetalConfetti/fps-ab.sh` measures real on-screen frame rate between builds
 
 ### Benchmark results

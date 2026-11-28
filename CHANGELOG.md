@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.2] - 2026-11-28
+
+### Fixed
+- Confetti looks like paper again. 1.3.1 kept 1.3.0's drag and fade but lost the per-piece flip:
+  pieces held one fixed tilt and spun flat, with the same colour on both sides and one shared sway.
+  Each piece now plays a flip strip (full width, edge-on, darker back) through the emitter's
+  sprite-sheet frames, starting at a random point, in three flip speeds that each sway at their own
+  rhythm. Spin is back to 1.3.0's speed. Still entirely in `CAEmitterLayer`: same particle count,
+  no per-frame app work, ~7 MB more memory for the flip strips.
+
 ## [1.3.1] - 2026-11-27
 
 ### Fixed
